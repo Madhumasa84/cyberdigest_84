@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  cyberdigest:
+    build: .
+    container_name: cyberdigest
+    restart: unless-stopped
+    volumes:
+      # Persist configuration and data
+      - ./config.json:/app/config.json
+      - ./state.db:/app/state.db
+      - ./reports:/app/reports
+      - ./agent_log.txt:/app/agent_log.txt
+      - ./status.txt:/app/status.txt
+      - ./heartbeat.txt:/app/heartbeat.txt

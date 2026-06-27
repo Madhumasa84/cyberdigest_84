@@ -1,0 +1,19 @@
+{
+    "interval_days": 3,
+    "max_archived_reports": 30,
+    "critical_keywords": [
+        "cve-",
+        "zero-day",
+        "0-day",
+        "actively exploited",
+        "rce",
+        "ransomware",
+        "breach"
+    ],
+    "high_keywords": [
+        "vulnerability",
+        "flaw",
+        "patch"
+    ],
+    "max_articles_per_feed": 8
+}

@@ -49,6 +49,7 @@ from email.mime.text import MIMEText
 from html import unescape
 from pathlib import Path
 from typing import Any
+import threading
 
 import feedparser
 import schedule
@@ -58,6 +59,14 @@ try:
     _HAS_PLYER = True
 except Exception:
     _HAS_PLYER = False
+
+try:
+    from PIL import Image, ImageDraw
+    import pystray
+    from pystray import MenuItem as item
+    _HAS_GUI = True
+except Exception:
+    _HAS_GUI = False
 
 
 # ---------------------------------------------------------------------------
@@ -1167,6 +1176,69 @@ def run_agent(is_fallback: bool = False) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# System Tray GUI
+# ---------------------------------------------------------------------------
+def _gui_open_latest(icon, item):
+    reports = sorted(REPORTS_DIR.glob("cybersec_report_*.html"), reverse=True)
+    if reports:
+        webbrowser.open(reports[0].as_uri())
+    else:
+        print("No reports generated yet.")
+
+def _gui_fetch_now(icon, item):
+    _log.info("Manual fetch triggered via GUI.")
+    threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+
+def _gui_edit_config(icon, item):
+    if platform.system() == "Windows":
+        os.startfile(CONFIG_FILE)
+    elif platform.system() == "Darwin":
+        subprocess.run(["open", str(CONFIG_FILE)])
+    else:
+        subprocess.run(["xdg-open", str(CONFIG_FILE)])
+
+def _gui_quit(icon, item):
+    global _SHUTDOWN
+    _SHUTDOWN = True
+    icon.stop()
+
+def _background_scheduler():
+    schedule.every(CONFIG["interval_days"]).days.do(lambda: run_agent(is_fallback=True))
+    while not _SHUTDOWN:
+        schedule.run_pending()
+        time.sleep(60)
+
+def run_tray_gui():
+    img = Image.new('RGB', (64, 64), color=(34, 211, 238))
+    d = ImageDraw.Draw(img)
+    d.rectangle([16, 16, 48, 48], fill=(13, 22, 40))
+    d.polygon([(32, 20), (44, 40), (20, 40)], fill=(167, 139, 250))
+
+    menu = pystray.Menu(
+        item("CyberDigest Agent", lambda: None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        item("Open Latest Digest", _gui_open_latest, default=True),
+        item("Fetch News Now", _gui_fetch_now),
+        item("Edit Config", _gui_edit_config),
+        pystray.Menu.SEPARATOR,
+        item("Quit", _gui_quit)
+    )
+
+    icon = pystray.Icon("CyberDigest", img, "CyberDigest Agent", menu)
+    
+    threading.Thread(target=_background_scheduler, daemon=True).start()
+    
+    lr = get_last_run()
+    if lr is None or (datetime.now() - lr) >= timedelta(days=CONFIG["interval_days"]) - timedelta(hours=2):
+        threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+
+    _log.info("Starting System Tray GUI...")
+    print("\n[GUI] System Tray mode active. Look for the icon in your taskbar!")
+    icon.run()
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -1175,7 +1247,8 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python3 news_agent.py                # Normal run\n"
+            "  python3 news_agent.py                # Normal run (GUI on desktop)\n"
+            "  python3 news_agent.py --cli-only     # Force CLI/Server mode\n"
             "  python3 news_agent.py --force        # Force run ignoring last-run time\n"
             "  python3 news_agent.py --healthcheck  # Print full health report\n"
             "  python3 news_agent.py --uninstall    # Remove OS scheduler\n"
@@ -1184,6 +1257,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true", help="Print health report and exit")
     parser.add_argument("--uninstall",   action="store_true", help="Remove OS scheduled task and exit")
     parser.add_argument("--force",       action="store_true", help="Force a run, bypassing last-run check")
+    parser.add_argument("--cli-only",    action="store_true", help="Run without system tray GUI")
     parser.add_argument("--version",     action="version",    version="CyberDigest 4.0")
     args = parser.parse_args()
 
@@ -1203,8 +1277,24 @@ def main() -> int:
         return 1
 
     try:
+        if args.force:
+            print("--force flag set: running immediately.")
+            run_agent(is_fallback=True)
+            return 0
+
+        headless = is_headless()
+        if not headless and not args.cli_only and _HAS_GUI:
+            print("=" * 54)
+            print("  CyberDigest — Desktop Tray Mode v4.0")
+            print("=" * 54)
+            register_scheduler()
+            success = run_tray_gui()
+            if success:
+                return 0
+
+        # Fallback to pure CLI mode (like in Docker or missing GUI packages)
         print("=" * 54)
-        print("  CyberDigest — Production Edition v4.0")
+        print("  CyberDigest — CLI / Server Mode v4.0")
         print("=" * 54)
         print()
 
@@ -1213,10 +1303,7 @@ def main() -> int:
         lr  = get_last_run()
         now = datetime.now()
 
-        if args.force:
-            should_run = True
-            print("--force flag set: running immediately.")
-        elif lr is None:
+        if lr is None:
             should_run = True
             print("First run detected — fetching digest now.")
         elif (now - lr) >= timedelta(days=CONFIG["interval_days"]) - timedelta(hours=2):
@@ -1232,7 +1319,7 @@ def main() -> int:
             retries = 0
             while not check_internet():
                 retries += 1
-                wait = min(30 * retries, 120)   # back off up to 2 h
+                wait = min(30 * retries, 120)
                 _log.warning("No internet — waiting %d min (attempt %d)", wait, retries)
                 print(f"No internet connection. Retrying in {wait} minutes…")
                 time.sleep(wait * 60)
@@ -1241,9 +1328,9 @@ def main() -> int:
             except Exception as exc:
                 _log.error("Unhandled run error: %s", exc, exc_info=True)
 
-        if not registered:
-            _log.warning("OS scheduling failed — running in-process fallback loop.")
-            print("\nOS scheduling failed. Running in background loop — leave window open.")
+        if not registered or args.cli_only:
+            _log.warning("Running in-process fallback loop.")
+            print("\nRunning in background loop — leave window open (or use screen/tmux).")
             sched_interval = CONFIG["interval_days"]
             schedule.every(sched_interval).days.do(lambda: run_agent(is_fallback=True))
             try:
@@ -1254,7 +1341,7 @@ def main() -> int:
                 print("\nStopped.")
         else:
             print()
-            print("✔  Done! CyberDigest is running in the background.")
+            print("✔  Done! CyberDigest is scheduled via OS.")
             print("   Check status.txt or run --healthcheck to verify.")
 
     finally:

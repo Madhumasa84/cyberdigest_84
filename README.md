@@ -9,44 +9,44 @@
 
 ---
 
-## ✨ What it does
+##  What it does
 
 CyberDigest automatically pulls cybersecurity news from **9 trusted sources** every 3 days and generates a stunning, interactive HTML report that opens right in your browser.
 
 - 🔴 **Critical** / 🟠 **High** / 🔵 **Normal** severity scoring  
-- 🔍 **Live search** — filter by keyword, CVE ID, or source  
-- 📊 **CVSS scores** pulled live from the NVD database  
-- 🗂️ **30-day rolling window** — old news auto-deleted, always fresh  
-- 💻 **Runs forever in the background** — survives reboots automatically  
-- 📁 **Archive page** — browse all past digests  
+-  **Live search** - filter by keyword, CVE ID, or source  
+-  **CVSS scores** pulled live from the NVD database  
+-  **30-day rolling window** - old news auto-deleted, always fresh  
+-  **Runs forever in the background** - survives reboots automatically  
+-  **Archive page** - browse all past digests  
 
 ---
 
-## 🚀 Quick Start (3 steps)
+##  Quick Start (3 steps)
 
-### Step 1 — Clone the repo
+### Step 1 - Clone the repo
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/cyberdigest.git
 cd cyberdigest
 ```
 
-### Step 2 — Run the launcher
+### Step 2 - Run the launcher
 
 | OS | Command |
 |---|---|
 | **Windows** | Double-click `start.bat` |
 | **macOS / Linux** | Run `bash start.sh` in terminal |
 
-> That's it. The launcher installs Python packages, runs the agent, and registers it to run automatically every 3 days — even after a reboot.
+> That's it. The launcher installs Python packages, runs the agent, and registers it to run automatically every 3 days - even after a reboot.
 
-### Step 3 — Done 🎉
+### Step 3 - Done 
 
 Your browser opens with the digest. Close the terminal window. The agent runs silently in the background forever.
 
 ---
 
-## 🐳 Docker (For Servers / Advanced Users)
+##  Docker (For Servers / Advanced Users)
 
 Want to run it headlessly on a 24/7 server without the desktop UI? Just use Docker:
 
@@ -59,17 +59,17 @@ Docker will build the environment and run the agent entirely in the background. 
 
 ---
 
-## 📋 Requirements
+##  Requirements
 
-- **Python 3.8+** — [Download here](https://www.python.org/downloads/) *(check "Add to PATH" on Windows)*
+- **Python 3.8+** - [Download here](https://www.python.org/downloads/) *(check "Add to PATH" on Windows)*
 - Internet connection
 - ~50 MB disk space
 
-No other setup needed — everything else is installed automatically.
+No other setup needed - everything else is installed automatically.
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 cyberdigest/
@@ -89,7 +89,7 @@ cyberdigest/
 
 ---
 
-## ⚙️ Configuration
+##  Configuration
 
 Edit `config.json` (auto-created on first run) to customise behaviour:
 
@@ -120,13 +120,13 @@ After editing, run the launcher once to re-register the new schedule.
 
 ---
 
-## 🖥️ CLI Commands
+##  CLI Commands
 
 ```bash
 # Force a run immediately (ignores the 3-day interval check)
 python3 news_agent.py --force
 
-# Full health report — scheduler, DB, feeds, disk, internet, lock files
+# Full health report - scheduler, DB, feeds, disk, internet, lock files
 python3 news_agent.py --healthcheck
 
 # Remove background scheduling (keeps all reports)
@@ -151,7 +151,7 @@ python3 news_agent.py --uninstall
 
 ---
 
-## 🔧 How Scheduling Works
+##  How Scheduling Works
 
 | OS | Method |
 |---|---|
@@ -163,13 +163,13 @@ The agent **verifies** the task was registered after creating it. If registratio
 
 ---
 
-## ❓ FAQ
+##  FAQ
 
 **Q: Do I need to keep the terminal open?**  
 No. The OS scheduler takes over after the first run. Close it freely.
 
 **Q: My internet was down when it ran. What happens?**  
-The agent detects the outage, waits 30 minutes, and retries — no empty reports.
+The agent detects the outage, waits 30 minutes, and retries - no empty reports.
 
 **Q: I was away for 2 weeks. Did I miss digests?**  
 No. Missed-run catch-up kicks in the moment your computer turns on.
@@ -178,10 +178,10 @@ No. Missed-run catch-up kicks in the moment your computer turns on.
 Run `python3 news_agent.py --uninstall`, then delete the folder.
 
 **Q: Can I add my own RSS feeds?**  
-Yes — edit the `FEEDS` list near the top of `news_agent.py`.
+Yes , edit the `FEEDS` list near the top of `news_agent.py`.
 
 ---
 
-## 📜 License
+##  License
 
-MIT — free for personal and commercial use.
+MIT - free for personal and commercial use.

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import fcntl                    # Unix lock file (Windows handled separately)
 import json
 import logging
 import logging.handlers
@@ -39,6 +38,12 @@ import urllib.request
 import webbrowser
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
+
+try:
+    import fcntl  # Unix only
+except ImportError:
+    fcntl = None  # Windows handles locking differently
+
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import unescape

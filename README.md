@@ -1,4 +1,4 @@
-# 🛡️ CyberDigest
+#  CyberDigest
 
 > **A self-healing, reboot-proof cybersecurity news agent for everyone.**  
 > Clone it. Run one file. Get a beautiful daily digest — forever.
@@ -27,7 +27,7 @@ CyberDigest automatically pulls cybersecurity news from **9 trusted sources** ev
 ### Step 1 - Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cyberdigest.git
+git clone https://github.com/Madhumasa84/cyberdigest.git
 cd cyberdigest
 ```
 

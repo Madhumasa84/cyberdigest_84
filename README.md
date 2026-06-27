@@ -28,7 +28,7 @@ CyberDigest automatically pulls cybersecurity news from **9 trusted sources** ev
 
 ```bash
 git clone https://github.com/Madhumasa84/cyberdigest_84.git
-cd cyberdigest
+cd cyberdigest_84
 ```
 
 ### Step 2 - Run the launcher

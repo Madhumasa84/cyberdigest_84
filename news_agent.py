@@ -1296,7 +1296,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         for rpt in [cyber_report, network_report]:
             if rpt.exists():
                 try:
-                    webbrowser.open(rpt.as_uri())
+                    webbrowser.open(str(rpt.resolve()))
                 except Exception as exc:
                     _log.warning("Browser open failed: %s", exc)
     else:
@@ -1315,7 +1315,7 @@ def _gui_open_latest(icon, item):
     for pattern in ["cybersec_report_*.html", "network_report_*.html"]:
         reports = sorted(REPORTS_DIR.glob(pattern), reverse=True)
         if reports:
-            webbrowser.open(reports[0].as_uri())
+            webbrowser.open(str(reports[0].resolve()))
             return
     print("No reports generated yet.")
 

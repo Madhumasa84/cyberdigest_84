@@ -83,7 +83,7 @@ LOCK_FILE      = BASE_DIR / "agent.lock"
 
 # ---------------------------------------------------------------------------
 # Feed lists  (name, rss-url, brand-color)
-# Two categories: cybersecurity and networking/infrastructure
+# Four categories: cybersecurity, networking, Cisco PSIRT, Fortinet PSIRT
 # ---------------------------------------------------------------------------
 CYBER_FEEDS: list[tuple[str, str, str]] = [
     # ── Breaking news & investigations ────────────────────────────────────
@@ -99,9 +99,9 @@ CYBER_FEEDS: list[tuple[str, str, str]] = [
     ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/",     "#9b59b6"),
     # ── Government & vendor advisories ───────────────────────────────────
     ("CISA Advisories",        "https://www.cisa.gov/cybersecurity-advisories/all.xml",            "#27ae60"),
-    ("Fortinet Blog",          "https://feeds.feedburner.com/fortinetblog",                      "#ee3124"),
+    ("Fortinet Blog",          "https://feeds.feedburner.com/fortinetblog",                        "#ee3124"),
     ("Microsoft Security",     "https://www.microsoft.com/security/blog/feed/",                    "#0078d4"),
-    ("Google Cloud Security",  "https://cloudblog.withgoogle.com/rss/",                          "#4285f4"),
+    ("Google Cloud Security",  "https://cloudblog.withgoogle.com/rss/",                            "#4285f4"),
     # ── Analysis & community ──────────────────────────────────────────────
     ("WeLiveSecurity (ESET)",  "https://feeds.feedburner.com/eset/blog",                           "#16a085"),
     ("Graham Cluley",          "https://grahamcluley.com/feed/",                                   "#e67e22"),
@@ -120,8 +120,18 @@ NETWORK_FEEDS: list[tuple[str, str, str]] = [
     ("The New Stack",          "https://thenewstack.io/feed/",                                     "#0077c8"),
 ]
 
+# Cisco PSIRT — official security advisories
+CISCO_PSIRT_FEEDS: list[tuple[str, str, str]] = [
+    ("Cisco PSIRT",            "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml", "#049fd4"),
+]
+
+# Fortinet PSIRT — official security advisories
+FORTINET_PSIRT_FEEDS: list[tuple[str, str, str]] = [
+    ("Fortinet PSIRT",         "https://www.fortiguard.com/rss/ir.xml",                            "#ee3124"),
+]
+
 # Combined for health-checking and other global operations
-ALL_FEEDS: list[tuple[str, str, str]] = CYBER_FEEDS + NETWORK_FEEDS
+ALL_FEEDS: list[tuple[str, str, str]] = CYBER_FEEDS + NETWORK_FEEDS + CISCO_PSIRT_FEEDS + FORTINET_PSIRT_FEEDS
 
 USER_AGENT    = "CyberDigest/4.0 (+https://github.com/cyberdigest)"
 FETCH_TIMEOUT = 15
@@ -856,16 +866,26 @@ def generate_html(arts: list[dict], report_date: str,
     sources = sorted({a["source"] for a in arts})
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    is_cyber   = (page_type == "cyber")
-    page_icon  = "&#x1F6E1;" if is_cyber else "&#x1F310;"
-    page_label = "Cybersecurity Intelligence" if is_cyber else "Networking &amp; Infrastructure"
-    page_tag   = "Automated threat intel &middot; " if is_cyber else "Enterprise networking &middot; "
-    other_glob = "network_report_*.html" if is_cyber else "cybersec_report_*.html"
-    other_lbl  = "&#x1F310; Networking" if is_cyber else "&#x1F6E1; Cybersecurity"
-    page_title = "CyberDigest" if is_cyber else "NetDigest"
+    TYPE_META = {
+        "cyber":    ("&#x1F6E1;", "Cybersecurity Intelligence",       "CyberDigest"),
+        "network":  ("&#x1F310;", "Networking &amp; Infrastructure",   "NetDigest"),
+        "cisco":    ("&#x1F4CB;", "Cisco PSIRT Advisories",            "CiscoAdvisories"),
+        "fortinet": ("&#x1F6E1;", "Fortinet PSIRT Advisories",         "FortiAdvisories"),
+    }
+    page_icon, page_label, page_title = TYPE_META.get(page_type, TYPE_META["cyber"])
 
-    # ── Latest report of the other type (for nav link) ────────────────────
-    other_href = f"network_report_{report_date}.html" if is_cyber else f"cybersec_report_{report_date}.html"
+    # ── Build nav links to sibling pages (point to same date, fallback to latest) ──
+    def _nav_href(prefix: str) -> str:
+        exact = REPORTS_DIR / f"{prefix}{report_date}.html"
+        if exact.exists():
+            return exact.name
+        candidates = sorted(REPORTS_DIR.glob(f"{prefix}*.html"), reverse=True)
+        return candidates[0].name if candidates else "index.html"
+
+    nav_cyber   = _nav_href("cybersec_report_")
+    nav_network = _nav_href("network_report_")
+    nav_cisco   = _nav_href("cisco_report_")
+    nav_fortinet= _nav_href("fortinet_report_")
 
     alerts = ""
     if sched_warn:
@@ -885,62 +905,80 @@ def generate_html(arts: list[dict], report_date: str,
     cards_html = ("\n".join(_card(a) for a in arts) if arts else
                   '<div class="empty"><span class="ico">&#128274;</span>No new articles since your last digest.</div>')
 
+    nav_links = (
+        ('' if page_type == 'cyber'    else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>')
+        + ('' if page_type == 'network' else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>')
+        + ('' if page_type == 'cisco'   else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
+        + ('' if page_type == 'fortinet'else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+    )
+    footer_links = (
+        ('' if page_type == 'cyber'    else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>')
+        + ('' if page_type == 'network' else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>')
+        + ('' if page_type == 'cisco'   else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
+        + ('' if page_type == 'fortinet'else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+    )
+
+    hdr_right = (
+        f'<div class="hdr-right">'
+        f'<span class="run-time">Generated {now_str}</span>'
+        + nav_links
+        + '<a class="arch-btn" href="index.html">&#x1F4C1; Archive</a>'
+        + '</div></header>'
+    )
+
     body = (
         '<div class="wrap">'
-        '<header class="site-header">'
-        '<div class="logo">'
-        f'<div class="logo-icon">{page_icon}</div>'
-        '<div class="logo-text"><h1>CyberDigest</h1>'
-        f'<div class="tag">{page_label} &middot; ' + h(report_date) + "</div>"
-        "</div></div>"
-        '<div class="hdr-right">'
-        f'<span class="run-time">Generated {now_str}</span>'
-        f'<a class="arch-btn" href="{other_href}">{other_lbl}</a>'
-        '<a class="arch-btn" href="index.html">&#x1F4C1; Archive</a>'
-        "</div></header>"
-
-        '<div class="stats-bar">'
-        '<div class="scard"><div class="snum">'     + str(total)        + '</div><div class="slbl">Articles</div></div>'
-        '<div class="scard"><div class="snum red">' + str(n_crit)       + '</div><div class="slbl">Critical</div></div>'
-        '<div class="scard"><div class="snum amb">' + str(n_high)       + '</div><div class="slbl">High</div></div>'
-        '<div class="scard"><div class="snum grn">' + str(n_norm)       + '</div><div class="slbl">Normal</div></div>'
-        '<div class="scard"><div class="snum">'     + str(len(sources)) + '</div><div class="slbl">Sources</div></div>'
-        "</div>"
-        + alerts +
-        '<div class="hp"><span class="hp-lbl">&#x1F4E1; Feeds</span>' + chips + "</div>"
-        '<div class="controls">'
-        '<input id="si" class="search" type="search" placeholder="Search articles, CVEs, sources…" autocomplete="off">'
-        '<div class="tabs">'
-        '<button class="tab on" data-f="All">All ('           + str(total)  + ")</button>"
-        '<button class="tab"    data-f="Critical">&#x1F534; Critical (' + str(n_crit) + ")</button>"
-        '<button class="tab"    data-f="High">&#x1F7E0; High ('       + str(n_high) + ')</button>'
-        '<button class="tab"    data-f="Normal">&#x1F535; Normal ('   + str(n_norm) + ')</button>'
-        "</div>"
-        '<select class="sort" id="ss">'
-        "<option value='newest' selected>Sort: Newest</option>"
-        "<option value='severity'>Sort: Severity</option>"
-        "<option value='oldest'>Sort: Oldest</option>"
-        "</select></div>"
-        '<div class="rbar" id="rb"></div>'
-        '<main class="grid" id="grid">' + cards_html + "</main>"
-        '<footer class="site-footer">'
-        "CyberDigest &mdash; self-healing &middot; next run in " + str(CONFIG["interval_days"]) + " days"
-        " &nbsp;&middot;&nbsp; "
-        '<a href="index.html">Past Reports</a>'
-        f' &nbsp;&middot;&nbsp; <a href="{other_href}">{other_lbl}</a>'
-        "</footer></div>"
-        "<script>" + _JS + "</script>"
+        + '<header class="site-header"><div class="logo">'
+        + f'<div class="logo-icon">{page_icon}</div>'
+        + '<div class="logo-text"><h1>CyberDigest</h1>'
+        + f'<div class="tag">{page_label} &middot; {h(report_date)}</div>'
+        + '</div></div>'
+        + hdr_right
+        + '<div class="stats-bar">'
+        + '<div class="scard"><div class="snum">'     + str(total)        + '</div><div class="slbl">Articles</div></div>'
+        + '<div class="scard"><div class="snum red">' + str(n_crit)       + '</div><div class="slbl">Critical</div></div>'
+        + '<div class="scard"><div class="snum amb">' + str(n_high)       + '</div><div class="slbl">High</div></div>'
+        + '<div class="scard"><div class="snum grn">' + str(n_norm)       + '</div><div class="slbl">Normal</div></div>'
+        + '<div class="scard"><div class="snum">'     + str(len(sources)) + '</div><div class="slbl">Sources</div></div>'
+        + '</div>'
+        + alerts
+        + '<div class="hp"><span class="hp-lbl">&#x1F4E1; Feeds</span>' + chips + '</div>'
+        + '<div class="controls">'
+        + '<input id="si" class="search" type="search" placeholder="Search articles, CVEs, sources\u2026" autocomplete="off">'
+        + '<div class="tabs">'
+        + '<button class="tab on" data-f="All">All ('           + str(total)  + ')</button>'
+        + '<button class="tab"    data-f="Critical">&#x1F534; Critical (' + str(n_crit) + ')</button>'
+        + '<button class="tab"    data-f="High">&#x1F7E0; High ('         + str(n_high) + ')</button>'
+        + '<button class="tab"    data-f="Normal">&#x1F535; Normal ('      + str(n_norm) + ')</button>'
+        + '</div>'
+        + "<select class=\"sort\" id=\"ss\">"
+        + "<option value='newest' selected>Sort: Newest</option>"
+        + "<option value='severity'>Sort: Severity</option>"
+        + "<option value='oldest'>Sort: Oldest</option>"
+        + '</select></div>'
+        + '<div class="rbar" id="rb"></div>'
+        + '<main class="grid" id="grid">' + cards_html + '</main>'
+        + '<footer class="site-footer">'
+        + 'CyberDigest &mdash; self-healing &middot; next run in ' + str(CONFIG["interval_days"]) + ' days'
+        + ' &nbsp;&middot;&nbsp; '
+        + '<a href="index.html">Past Reports</a>'
+        + footer_links
+        + '</footer></div>'
+        + '<script>' + _JS + '</script>'
     )
-    return _page(page_title + " — " + report_date, _CSS, body)
+    return _page(page_title + " \u2014 " + report_date, _CSS, body)
+
 
 
 def generate_index_html():
-    cyber_reports   = sorted(REPORTS_DIR.glob("cybersec_report_*.html"),  reverse=True)
-    network_reports = sorted(REPORTS_DIR.glob("network_report_*.html"),   reverse=True)
+    cyber_reports    = sorted(REPORTS_DIR.glob("cybersec_report_*.html"),  reverse=True)
+    network_reports  = sorted(REPORTS_DIR.glob("network_report_*.html"),   reverse=True)
+    cisco_reports    = sorted(REPORTS_DIR.glob("cisco_report_*.html"),     reverse=True)
+    fortinet_reports = sorted(REPORTS_DIR.glob("fortinet_report_*.html"),  reverse=True)
 
     # Prune oldest reports beyond max_archived
     max_arch = CONFIG["max_archived_reports"]
-    for rpts in [cyber_reports, network_reports]:
+    for rpts in [cyber_reports, network_reports, cisco_reports, fortinet_reports]:
         while len(rpts) > max_arch:
             try:
                 rpts.pop().unlink()
@@ -966,10 +1004,12 @@ def generate_index_html():
                      f'<span class="rtime">{t_str}</span></a>')
         return rows
 
-    cyber_rows   = _make_rows(cyber_reports,   "cybersec_report_", "&#x1F6E1;")
-    network_rows = _make_rows(network_reports, "network_report_",  "&#x1F310;")
+    cyber_rows    = _make_rows(cyber_reports,    "cybersec_report_", "&#x1F6E1;")
+    network_rows  = _make_rows(network_reports,  "network_report_",  "&#x1F310;")
+    cisco_rows    = _make_rows(cisco_reports,    "cisco_report_",    "&#x1F4CB;")
+    fortinet_rows = _make_rows(fortinet_reports, "fortinet_report_", "&#x1F6E1;")
 
-    total = len(cyber_reports) + len(network_reports)
+    total = len(cyber_reports) + len(network_reports) + len(cisco_reports) + len(fortinet_reports)
 
     body = (
         '<div class="wrap">'
@@ -991,6 +1031,20 @@ def generate_index_html():
         '<div class="arch-heading"><span class="arch-ico">&#x1F310;</span>Networking &amp; Infrastructure</div>'
         '<div class="rlist">'
         + (network_rows or "<p class='no-rep'>No networking reports yet.</p>") +
+        "</div></div>"
+
+        # Cisco PSIRT section
+        '<div class="arch-section">'
+        '<div class="arch-heading"><span class="arch-ico">&#x1F4CB;</span>Cisco PSIRT Advisories</div>'
+        '<div class="rlist">'
+        + (cisco_rows or "<p class='no-rep'>No Cisco PSIRT reports yet.</p>") +
+        "</div></div>"
+
+        # Fortinet PSIRT section
+        '<div class="arch-section">'
+        '<div class="arch-heading"><span class="arch-ico">&#x1F6E1;</span>Fortinet PSIRT Advisories</div>'
+        '<div class="rlist">'
+        + (fortinet_rows or "<p class='no-rep'>No Fortinet PSIRT reports yet.</p>") +
         "</div></div>"
 
         '<footer class="site-footer"><a href="javascript:history.back()">&#x2190; Back to latest</a></footer>'
@@ -1154,6 +1208,22 @@ def run_healthcheck() -> int:
         except Exception:
             lines.append(f"  ✘  {name}")
 
+    lines.append("  --- Cisco PSIRT ---")
+    for name, url, _ in CISCO_PSIRT_FEEDS:
+        try:
+            urllib.request.urlopen(url, timeout=5)
+            lines.append(f"  ✔  {name}")
+        except Exception:
+            lines.append(f"  ✘  {name}")
+
+    lines.append("  --- Fortinet PSIRT ---")
+    for name, url, _ in FORTINET_PSIRT_FEEDS:
+        try:
+            urllib.request.urlopen(url, timeout=5)
+            lines.append(f"  ✔  {name}")
+        except Exception:
+            lines.append(f"  ✘  {name}")
+
     lines.append("")
     lines.append("=================================")
     lines.append(f"Overall: {'✔ HEALTHY' if ok else '⚠ ISSUES DETECTED'}")
@@ -1197,15 +1267,19 @@ def run_agent(is_fallback: bool = False) -> bool:
     seen     = load_seen()
     all_arts: list[dict] = []
 
-    # ── Fetch all feeds concurrently (cyber + network) ────────────────────
+    # ── Fetch all feeds concurrently (cyber + network + psirt) ───────────
     net_cap = CONFIG.get("max_articles_per_network_feed", 5)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(ALL_FEEDS), 14)) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(ALL_FEEDS), 16)) as ex:
         futs: dict = {}
         for name, url, color in CYBER_FEEDS:
             futs[ex.submit(fetch_feed, name, url, color, seen, "cyber",
                            CONFIG["max_articles_per_feed"])] = name
         for name, url, color in NETWORK_FEEDS:
             futs[ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)] = name
+        for name, url, color in CISCO_PSIRT_FEEDS:
+            futs[ex.submit(fetch_feed, name, url, color, seen, "cisco", 20)] = name
+        for name, url, color in FORTINET_PSIRT_FEEDS:
+            futs[ex.submit(fetch_feed, name, url, color, seen, "fortinet", 20)] = name
         for fut in concurrent.futures.as_completed(futs):
             result = fut.result()
             if result:
@@ -1223,11 +1297,15 @@ def run_agent(is_fallback: bool = False) -> bool:
         return False
 
     # ── Split by category, cluster each independently ─────────────────────
-    cyber_arts   = [a for a in all_arts if a.get("category") == "cyber"]
-    network_arts = [a for a in all_arts if a.get("category") == "network"]
+    cyber_arts    = [a for a in all_arts if a.get("category") == "cyber"]
+    network_arts  = [a for a in all_arts if a.get("category") == "network"]
+    cisco_arts    = [a for a in all_arts if a.get("category") == "cisco"]
+    fortinet_arts = [a for a in all_arts if a.get("category") == "fortinet"]
 
-    cyber_clustered   = cluster(cyber_arts)
-    network_clustered = cluster(network_arts)
+    cyber_clustered    = cluster(cyber_arts)
+    network_clustered  = cluster(network_arts)
+    cisco_clustered    = cluster(cisco_arts)
+    fortinet_clustered = cluster(fortinet_arts)
 
     save_articles(all_arts)
 
@@ -1238,15 +1316,17 @@ def run_agent(is_fallback: bool = False) -> bool:
     sched_warn = ("Automatic scheduling could not be set up — keep this window open to stay updated."
                   if is_fallback else "")
 
-    cyber_report   = REPORTS_DIR / f"cybersec_report_{file_date}.html"
-    network_report = REPORTS_DIR / f"network_report_{file_date}.html"
+    cyber_report    = REPORTS_DIR / f"cybersec_report_{file_date}.html"
+    network_report  = REPORTS_DIR / f"network_report_{file_date}.html"
+    cisco_report    = REPORTS_DIR / f"cisco_report_{file_date}.html"
+    fortinet_report = REPORTS_DIR / f"fortinet_report_{file_date}.html"
 
     html_cyber = ""
     try:
         # ── Cybersecurity report ──────────────────────────────────────────
         if cyber_clustered:
             html_cyber = generate_html(
-                cyber_clustered, date_long, health_data, sched_warn,
+                cyber_clustered, file_date, health_data, sched_warn,
                 CYBER_FEEDS, "cyber"
             )
             tmp = cyber_report.with_suffix(".html.tmp")
@@ -1258,7 +1338,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         # ── Networking report ─────────────────────────────────────────────
         if network_clustered:
             html_net = generate_html(
-                network_clustered, date_long, health_data, sched_warn,
+                network_clustered, file_date, health_data, sched_warn,
                 NETWORK_FEEDS, "network"
             )
             tmp = network_report.with_suffix(".html.tmp")
@@ -1266,6 +1346,30 @@ def run_agent(is_fallback: bool = False) -> bool:
             tmp.rename(network_report)
             _log.info("Network report saved: %s (%d arts → %d clusters)",
                       network_report.name, len(network_arts), len(network_clustered))
+
+        # ── Cisco PSIRT report ────────────────────────────────────────────
+        if cisco_clustered:
+            html_cisco = generate_html(
+                cisco_clustered, file_date, health_data, sched_warn,
+                CISCO_PSIRT_FEEDS, "cisco"
+            )
+            tmp = cisco_report.with_suffix(".html.tmp")
+            tmp.write_text(html_cisco, encoding="utf-8")
+            tmp.rename(cisco_report)
+            _log.info("Cisco PSIRT report saved: %s (%d arts → %d clusters)",
+                      cisco_report.name, len(cisco_arts), len(cisco_clustered))
+
+        # ── Fortinet PSIRT report ─────────────────────────────────────────
+        if fortinet_clustered:
+            html_fortinet = generate_html(
+                fortinet_clustered, file_date, health_data, sched_warn,
+                FORTINET_PSIRT_FEEDS, "fortinet"
+            )
+            tmp = fortinet_report.with_suffix(".html.tmp")
+            tmp.write_text(html_fortinet, encoding="utf-8")
+            tmp.rename(fortinet_report)
+            _log.info("Fortinet PSIRT report saved: %s (%d arts → %d clusters)",
+                      fortinet_report.name, len(fortinet_arts), len(fortinet_clustered))
 
         generate_index_html()
     except Exception as exc:
@@ -1292,15 +1396,15 @@ def run_agent(is_fallback: bool = False) -> bool:
 
     # ── Open browser (skip on headless) ──────────────────────────────────
     if not is_headless():
-        for rpt in [cyber_report, network_report]:
+        for rpt in [cyber_report, network_report, cisco_report, fortinet_report]:
             if rpt.exists():
                 try:
                     open_local_html(rpt)
                 except Exception as exc:
                     _log.warning("Browser open failed: %s", exc)
     else:
-        if cyber_report.exists():   print(f"Cyber report:   {cyber_report}")
-        if network_report.exists(): print(f"Network report: {network_report}")
+        for rpt in [cyber_report, network_report, cisco_report, fortinet_report]:
+            if rpt.exists(): print(f"Report: {rpt}")
 
     _log.info("=== Run complete ===")
     return True

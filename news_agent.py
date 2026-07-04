@@ -49,6 +49,7 @@ from email.mime.text import MIMEText
 from html import unescape
 from pathlib import Path
 from typing import Any
+import threading
 
 import feedparser
 import schedule
@@ -58,6 +59,14 @@ try:
     _HAS_PLYER = True
 except Exception:
     _HAS_PLYER = False
+
+try:
+    from PIL import Image, ImageDraw
+    import pystray
+    from pystray import MenuItem as item
+    _HAS_GUI = True
+except Exception:
+    _HAS_GUI = False
 
 
 # ---------------------------------------------------------------------------
@@ -73,19 +82,46 @@ CONFIG_FILE    = BASE_DIR / "config.json"
 LOCK_FILE      = BASE_DIR / "agent.lock"
 
 # ---------------------------------------------------------------------------
-# Feed list  (name, rss-url, brand-color)
+# Feed lists  (name, rss-url, brand-color)
+# Two categories: cybersecurity and networking/infrastructure
 # ---------------------------------------------------------------------------
-FEEDS: list[tuple[str, str, str]] = [
-    ("The Hacker News",        "https://feeds.feedburner.com/TheHackersNews",           "#e74c3c"),
-    ("Krebs on Security",      "https://krebsonsecurity.com/feed/",                     "#2c3e50"),
-    ("Schneier on Security",   "https://www.schneier.com/feed/atom/",                   "#3498db"),
-    ("CISA Advisories",        "https://www.cisa.gov/cybersecurity-advisories/all.xml", "#27ae60"),
-    ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/", "#9b59b6"),
-    ("Microsoft Security",     "https://www.microsoft.com/security/blog/feed/",         "#0078d4"),
-    ("Cloudflare Security",    "https://blog.cloudflare.com/tag/security/rss",          "#f38020"),
-    ("WeLiveSecurity (ESET)",  "https://feeds.feedburner.com/eset/blog",                "#16a085"),
-    ("Graham Cluley",          "https://grahamcluley.com/feed/",                        "#e67e22"),
+CYBER_FEEDS: list[tuple[str, str, str]] = [
+    # ── Breaking news & investigations ────────────────────────────────────
+    ("The Hacker News",        "https://feeds.feedburner.com/TheHackersNews",                      "#e74c3c"),
+    ("SecurityWeek",           "https://www.securityweek.com/feed/",                               "#c0392b"),
+    ("BleepingComputer",       "https://www.bleepingcomputer.com/feed/",                           "#e74c3c"),
+    ("Krebs on Security",      "https://krebsonsecurity.com/feed/",                                "#2c3e50"),
+    ("Schneier on Security",   "https://www.schneier.com/feed/atom/",                              "#3498db"),
+    # ── Threat intelligence ───────────────────────────────────────────────
+    ("Cisco Talos",            "https://blog.talosintelligence.com/rss/",                          "#049fd4"),
+    ("Cisco Security",         "https://feedpress.me/ciscosecurity",                               "#049fd4"),
+    ("Palo Alto Unit 42",      "https://feeds.feedburner.com/Unit42",                              "#fa4616"),
+    ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/",     "#9b59b6"),
+    # ── Government & vendor advisories ───────────────────────────────────
+    ("CISA Advisories",        "https://www.cisa.gov/cybersecurity-advisories/all.xml",            "#27ae60"),
+    ("Fortinet Blog",          "https://feeds.feedburner.com/fortinetblog",                      "#ee3124"),
+    ("Microsoft Security",     "https://www.microsoft.com/security/blog/feed/",                    "#0078d4"),
+    ("Google Cloud Security",  "https://cloudblog.withgoogle.com/rss/",                          "#4285f4"),
+    # ── Analysis & community ──────────────────────────────────────────────
+    ("WeLiveSecurity (ESET)",  "https://feeds.feedburner.com/eset/blog",                           "#16a085"),
+    ("Graham Cluley",          "https://grahamcluley.com/feed/",                                   "#e67e22"),
+    ("Cloudflare Security",    "https://blog.cloudflare.com/tag/security/rss",                     "#f38020"),
+    ("Dark Reading",           "https://www.darkreading.com/rss.xml",                              "#8b0000"),
 ]
+
+NETWORK_FEEDS: list[tuple[str, str, str]] = [
+    # ── Enterprise networking & architecture ──────────────────────────────
+    ("Network World",          "https://www.networkworld.com/feed/",                               "#0ea5e9"),
+    ("Packet Pushers",         "https://feeds.packetpushers.net/packetpushersfullfeed/",           "#6366f1"),
+    # ── Cisco & automation ────────────────────────────────────────────────
+    ("Cisco Blogs",            "https://blogs.cisco.com/developer/feed",                           "#049fd4"),
+    # ── Cloud networking ──────────────────────────────────────────────────
+    ("AWS Networking",         "https://aws.amazon.com/blogs/networking-and-content-delivery/feed/", "#ff9900"),
+    ("The New Stack",          "https://thenewstack.io/feed/",                                     "#0077c8"),
+]
+
+# Combined for health-checking and other global operations
+ALL_FEEDS: list[tuple[str, str, str]] = CYBER_FEEDS + NETWORK_FEEDS
 
 USER_AGENT    = "CyberDigest/4.0 (+https://github.com/cyberdigest)"
 FETCH_TIMEOUT = 15
@@ -117,13 +153,17 @@ _log = _setup_logging()
 # Configuration  (auto-created, validated, merged with defaults)
 # ---------------------------------------------------------------------------
 DEFAULT_CONFIG: dict = {
-    "interval_days":         3,
-    "max_archived_reports":  30,
-    "max_articles_per_feed": 8,
-    "log_level":             "INFO",
+    "interval_days":                 3,
+    "max_archived_reports":          30,
+    "max_articles_per_feed":         8,     # cap per cybersecurity feed
+    "max_articles_per_network_feed": 5,     # cap per networking feed (keeps report readable)
+    "log_level":                     "INFO",
     "critical_keywords":     ["cve-", "zero-day", "0-day", "actively exploited",
-                              "rce", "ransomware", "breach", "critical vulnerability"],
-    "high_keywords":         ["vulnerability", "flaw", "patch", "exploit", "malware"],
+                              "rce", "ransomware", "breach", "critical vulnerability",
+                              "outage", "bgp hijack", "backbone failure", "ddos"],
+    "high_keywords":         ["vulnerability", "flaw", "patch", "exploit", "malware",
+                              "deprecat", "end-of-life", "eol", "misconfiguration",
+                              "sd-wan", "firmware update", "security advisory"],
 
     # ── Email (optional) ─────────────────────────────────────────────────
     # Fill in to receive the digest by email every run.
@@ -143,10 +183,11 @@ DEFAULT_CONFIG: dict = {
 }
 
 _CONFIG_REQUIRED_TYPES: dict[str, type] = {
-    "interval_days":         int,
-    "max_archived_reports":  int,
-    "max_articles_per_feed": int,
-    "log_level":             str,
+    "interval_days":                 int,
+    "max_archived_reports":          int,
+    "max_articles_per_feed":         int,
+    "max_articles_per_network_feed": int,
+    "log_level":                     str,
 }
 
 def _validate_config(cfg: dict) -> list[str]:
@@ -505,14 +546,16 @@ def _fetch_with_retry(name: str, url: str) -> Any:
                 time.sleep(delay)
     raise last_exc or RuntimeError("Feed fetch failed")
 
-def fetch_feed(name: str, url: str, color: str, seen: set[str]) -> list[dict]:
+def fetch_feed(name: str, url: str, color: str, seen: set[str],
+               category: str = "cyber", max_arts: int | None = None) -> list[dict]:
     try:
         parsed = _fetch_with_retry(name, url)
         arts: list[dict] = []
         if not parsed:
             update_health(name, True)
             return arts
-        for entry in parsed.entries[:CONFIG["max_articles_per_feed"]]:
+        cap = max_arts if max_arts is not None else CONFIG["max_articles_per_feed"]
+        for entry in parsed.entries[:cap]:
             link = (entry.get("link") or "").strip()
             if not link or link in seen:
                 continue
@@ -528,6 +571,7 @@ def fetch_feed(name: str, url: str, color: str, seen: set[str]) -> list[dict]:
                 "title": title, "link": link, "summary": summary,
                 "published": pub, "timestamp": ts, "color": color,
                 "source": name, "severity": score_severity(title, summary),
+                "category": category,
                 "other_sources": set(),
             })
         update_health(name, True)
@@ -698,6 +742,12 @@ _IDXCSS = (
     ".rico{font-size:17px;flex-shrink:0}"
     ".rname{flex:1;font-size:13.5px;font-weight:500}"
     ".rtime{font-size:11.5px;color:var(--tm);font-family:'JetBrains Mono',monospace}"
+    ".arch-section{margin-bottom:32px}"
+    ".arch-heading{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;"
+    "text-transform:uppercase;letter-spacing:1.2px;color:var(--t2);"
+    "margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}"
+    ".arch-ico{font-size:18px}"
+    ".no-rep{font-size:12.5px;color:var(--tm);padding:10px 0}"
 )
 
 _JS = (
@@ -792,9 +842,12 @@ def _page(title: str, css: str, body: str) -> str:
     )
 
 def generate_html(arts: list[dict], report_date: str,
-                  health_data: dict[str, int], sched_warn: str) -> str:
+                  health_data: dict[str, int], sched_warn: str,
+                  feeds_list: list[tuple[str, str, str]],
+                  page_type: str = "cyber") -> str:
+    # Sort newest-first (most recently updated floats to top) — secondary by severity
     sev_ord = {"Critical": 0, "High": 1, "Normal": 2}
-    arts.sort(key=lambda x: (sev_ord.get(x["severity"], 3), -x["timestamp"]))
+    arts.sort(key=lambda x: (-x["timestamp"], sev_ord.get(x["severity"], 3)))
 
     total   = len(arts)
     n_crit  = sum(1 for a in arts if a["severity"] == "Critical")
@@ -803,17 +856,29 @@ def generate_html(arts: list[dict], report_date: str,
     sources = sorted({a["source"] for a in arts})
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    is_cyber   = (page_type == "cyber")
+    page_icon  = "&#x1F6E1;" if is_cyber else "&#x1F310;"
+    page_label = "Cybersecurity Intelligence" if is_cyber else "Networking &amp; Infrastructure"
+    page_tag   = "Automated threat intel &middot; " if is_cyber else "Enterprise networking &middot; "
+    other_glob = "network_report_*.html" if is_cyber else "cybersec_report_*.html"
+    other_lbl  = "&#x1F310; Networking" if is_cyber else "&#x1F6E1; Cybersecurity"
+    page_title = "CyberDigest" if is_cyber else "NetDigest"
+
+    # ── Latest report of the other type (for nav link) ────────────────────
+    other_reports = sorted(REPORTS_DIR.glob(other_glob), reverse=True)
+    other_href    = other_reports[0].name if other_reports else "index.html"
+
     alerts = ""
     if sched_warn:
         alerts += '<div class="alert ai"><span class="ai-ico">&#8505;</span><span>' + sched_warn + "</span></div>"
-    for name, _, _ in FEEDS:
+    for name, _, _ in feeds_list:
         if health_data.get(name, 0) >= 3:
             alerts += ('<div class="alert ae"><span class="ai-ico">&#9888;</span>'
                        "<span><strong>" + h(name) + "</strong> has failed "
                        + str(health_data[name]) + " consecutive times.</span></div>")
 
     chips = ""
-    for name, _, _ in FEEDS:
+    for name, _, _ in feeds_list:
         fails = health_data.get(name, 0)
         dc    = "ok" if fails == 0 else ("fail" if fails >= 3 else "warn")
         chips += f'<span class="chip" title="{"OK" if fails==0 else f"{fails} failure(s)"}"><span class="dot {dc}"></span>{h(name)}</span>'
@@ -825,20 +890,21 @@ def generate_html(arts: list[dict], report_date: str,
         '<div class="wrap">'
         '<header class="site-header">'
         '<div class="logo">'
-        '<div class="logo-icon">&#x1F6E1;</div>'
+        f'<div class="logo-icon">{page_icon}</div>'
         '<div class="logo-text"><h1>CyberDigest</h1>'
-        '<div class="tag">Automated threat intelligence &middot; ' + h(report_date) + "</div>"
+        f'<div class="tag">{page_label} &middot; ' + h(report_date) + "</div>"
         "</div></div>"
         '<div class="hdr-right">'
-        '<span class="run-time">Generated ' + now_str + "</span>"
+        f'<span class="run-time">Generated {now_str}</span>'
+        f'<a class="arch-btn" href="{other_href}">{other_lbl}</a>'
         '<a class="arch-btn" href="index.html">&#x1F4C1; Archive</a>'
         "</div></header>"
 
         '<div class="stats-bar">'
-        '<div class="scard"><div class="snum">'     + str(total)       + '</div><div class="slbl">Articles</div></div>'
-        '<div class="scard"><div class="snum red">' + str(n_crit)      + '</div><div class="slbl">Critical</div></div>'
-        '<div class="scard"><div class="snum amb">' + str(n_high)      + '</div><div class="slbl">High</div></div>'
-        '<div class="scard"><div class="snum grn">' + str(n_norm)      + '</div><div class="slbl">Normal</div></div>'
+        '<div class="scard"><div class="snum">'     + str(total)        + '</div><div class="slbl">Articles</div></div>'
+        '<div class="scard"><div class="snum red">' + str(n_crit)       + '</div><div class="slbl">Critical</div></div>'
+        '<div class="scard"><div class="snum amb">' + str(n_high)       + '</div><div class="slbl">High</div></div>'
+        '<div class="scard"><div class="snum grn">' + str(n_norm)       + '</div><div class="slbl">Normal</div></div>'
         '<div class="scard"><div class="snum">'     + str(len(sources)) + '</div><div class="slbl">Sources</div></div>'
         "</div>"
         + alerts +
@@ -852,8 +918,8 @@ def generate_html(arts: list[dict], report_date: str,
         '<button class="tab"    data-f="Normal">&#x1F535; Normal ('   + str(n_norm) + ')</button>'
         "</div>"
         '<select class="sort" id="ss">'
+        "<option value='newest' selected>Sort: Newest</option>"
         "<option value='severity'>Sort: Severity</option>"
-        "<option value='newest'>Sort: Newest</option>"
         "<option value='oldest'>Sort: Oldest</option>"
         "</select></div>"
         '<div class="rbar" id="rb"></div>'
@@ -862,46 +928,72 @@ def generate_html(arts: list[dict], report_date: str,
         "CyberDigest &mdash; self-healing &middot; next run in " + str(CONFIG["interval_days"]) + " days"
         " &nbsp;&middot;&nbsp; "
         '<a href="index.html">Past Reports</a>'
+        f' &nbsp;&middot;&nbsp; <a href="{other_href}">{other_lbl}</a>'
         "</footer></div>"
         "<script>" + _JS + "</script>"
     )
-    return _page("CyberDigest — " + report_date, _CSS, body)
+    return _page(page_title + " — " + report_date, _CSS, body)
 
 
 def generate_index_html():
-    reports = sorted(REPORTS_DIR.glob("cybersec_report_*.html"), reverse=True)
+    cyber_reports   = sorted(REPORTS_DIR.glob("cybersec_report_*.html"),  reverse=True)
+    network_reports = sorted(REPORTS_DIR.glob("network_report_*.html"),   reverse=True)
 
-    while len(reports) > CONFIG["max_archived_reports"]:
-        try:
-            reports.pop().unlink()
-        except Exception:
-            pass
+    # Prune oldest reports beyond max_archived
+    max_arch = CONFIG["max_archived_reports"]
+    for rpts in [cyber_reports, network_reports]:
+        while len(rpts) > max_arch:
+            try:
+                rpts.pop().unlink()
+            except Exception:
+                pass
 
-    rows = ""
-    for i, r in enumerate(reports):
-        dp = r.stem.replace("cybersec_report_", "")
-        try:
-            dt    = datetime.strptime(dp, "%Y%m%d_%H%M")
-            disp  = dt.strftime("%B %d, %Y")
-            t_str = dt.strftime("%I:%M %p")
-        except ValueError:
-            disp, t_str = dp, ""
-        latest = ('<span style="font-size:9.5px;background:rgba(34,211,238,.15);color:#22d3ee;'
-                  'padding:1px 7px;border-radius:999px;margin-left:7px;border:1px solid rgba(34,211,238,.3)">Latest</span>'
-                  if i == 0 else "")
-        rows += (f'<a href="{r.name}" class="rrow">'
-                 f'<span class="rico">&#x1F4C4;</span>'
-                 f'<span class="rname">{disp}{latest}</span>'
-                 f'<span class="rtime">{t_str}</span></a>')
+    def _make_rows(reports: list, prefix: str, icon: str) -> str:
+        rows = ""
+        for i, r in enumerate(reports):
+            dp = r.stem.replace(prefix, "")
+            try:
+                dt    = datetime.strptime(dp, "%Y%m%d_%H%M")
+                disp  = dt.strftime("%B %d, %Y")
+                t_str = dt.strftime("%I:%M %p")
+            except ValueError:
+                disp, t_str = dp, ""
+            latest = ('<span style="font-size:9.5px;background:rgba(34,211,238,.15);color:#22d3ee;'
+                      'padding:1px 7px;border-radius:999px;margin-left:7px;border:1px solid rgba(34,211,238,.3)">Latest</span>'
+                      if i == 0 else "")
+            rows += (f'<a href="{r.name}" class="rrow">'
+                     f'<span class="rico">{icon}</span>'
+                     f'<span class="rname">{disp}{latest}</span>'
+                     f'<span class="rtime">{t_str}</span></a>')
+        return rows
+
+    cyber_rows   = _make_rows(cyber_reports,   "cybersec_report_", "&#x1F6E1;")
+    network_rows = _make_rows(network_reports, "network_report_",  "&#x1F310;")
+
+    total = len(cyber_reports) + len(network_reports)
 
     body = (
         '<div class="wrap">'
         '<header class="site-header"><div class="logo">'
         '<div class="logo-icon">&#x1F4C1;</div>'
         '<div class="logo-text"><h1>CyberDigest Archive</h1>'
-        '<div class="tag">' + str(len(reports)) + " past report(s)</div>"
+        f'<div class="tag">{total} past report(s)</div>'
         "</div></div></header>"
-        '<div class="rlist">' + (rows or "<p>No reports yet.</p>") + "</div>"
+
+        # Cybersecurity section
+        '<div class="arch-section">'
+        '<div class="arch-heading"><span class="arch-ico">&#x1F6E1;</span>Cybersecurity Intelligence</div>'
+        '<div class="rlist">'
+        + (cyber_rows or "<p class='no-rep'>No cybersecurity reports yet.</p>") +
+        "</div></div>"
+
+        # Networking section
+        '<div class="arch-section">'
+        '<div class="arch-heading"><span class="arch-ico">&#x1F310;</span>Networking &amp; Infrastructure</div>'
+        '<div class="rlist">'
+        + (network_rows or "<p class='no-rep'>No networking reports yet.</p>") +
+        "</div></div>"
+
         '<footer class="site-footer"><a href="javascript:history.back()">&#x2190; Back to latest</a></footer>'
         "</div>"
     )
@@ -909,6 +1001,7 @@ def generate_index_html():
     tmp = REPORTS_DIR / "index.html.tmp"
     tmp.write_text(idx, encoding="utf-8")
     tmp.rename(REPORTS_DIR / "index.html")
+
 
 
 # ---------------------------------------------------------------------------
@@ -1046,7 +1139,16 @@ def run_healthcheck() -> int:
 
     lines.append("")
     lines.append("Feed reachability:")
-    for name, url, _ in FEEDS:
+    lines.append("  --- Cybersecurity ---")
+    for name, url, _ in CYBER_FEEDS:
+        try:
+            urllib.request.urlopen(url, timeout=3)
+            lines.append(f"  ✔  {name}")
+        except Exception:
+            lines.append(f"  ✘  {name}")
+
+    lines.append("  --- Networking & Infrastructure ---")
+    for name, url, _ in NETWORK_FEEDS:
         try:
             urllib.request.urlopen(url, timeout=3)
             lines.append(f"  ✔  {name}")
@@ -1093,20 +1195,26 @@ def run_agent(is_fallback: bool = False) -> bool:
         return False
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    seen = load_seen()
+    seen     = load_seen()
     all_arts: list[dict] = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(FEEDS), 9)) as ex:
-        futs = {ex.submit(fetch_feed, name, url, color, seen): name
-                for name, url, color in FEEDS}
+    # ── Fetch all feeds concurrently (cyber + network) ────────────────────
+    net_cap = CONFIG.get("max_articles_per_network_feed", 5)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(ALL_FEEDS), 14)) as ex:
+        futs: dict = {}
+        for name, url, color in CYBER_FEEDS:
+            futs[ex.submit(fetch_feed, name, url, color, seen, "cyber",
+                           CONFIG["max_articles_per_feed"])] = name
+        for name, url, color in NETWORK_FEEDS:
+            futs[ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)] = name
         for fut in concurrent.futures.as_completed(futs):
             result = fut.result()
             if result:
                 all_arts.extend(result)
 
     health_data = get_health()
-    ok_count    = sum(1 for f in FEEDS if health_data.get(f[0], 0) == 0)
-    fail_count  = len(FEEDS) - ok_count
+    ok_count    = sum(1 for f in ALL_FEEDS if health_data.get(f[0], 0) == 0)
+    fail_count  = len(ALL_FEEDS) - ok_count
 
     write_status(ok_count, fail_count, len(all_arts))
     set_last_run(datetime.now())
@@ -1115,39 +1223,69 @@ def run_agent(is_fallback: bool = False) -> bool:
         _log.info("No new articles this run.")
         return False
 
-    clustered = cluster(all_arts)
+    # ── Split by category, cluster each independently ─────────────────────
+    cyber_arts   = [a for a in all_arts if a.get("category") == "cyber"]
+    network_arts = [a for a in all_arts if a.get("category") == "network"]
+
+    cyber_clustered   = cluster(cyber_arts)
+    network_clustered = cluster(network_arts)
+
     save_articles(all_arts)
 
     now       = datetime.now()
     date_long = now.strftime("%B %d, %Y")
     file_date = now.strftime("%Y%m%d_%H%M")
-    report    = REPORTS_DIR / f"cybersec_report_{file_date}.html"
 
     sched_warn = ("Automatic scheduling could not be set up — keep this window open to stay updated."
                   if is_fallback else "")
 
+    cyber_report   = REPORTS_DIR / f"cybersec_report_{file_date}.html"
+    network_report = REPORTS_DIR / f"network_report_{file_date}.html"
+
+    html_cyber = ""
     try:
-        html_content = generate_html(clustered, date_long, health_data, sched_warn)
-        tmp = report.with_suffix(".html.tmp")
-        tmp.write_text(html_content, encoding="utf-8")
-        tmp.rename(report)
+        # ── Cybersecurity report ──────────────────────────────────────────
+        if cyber_clustered:
+            html_cyber = generate_html(
+                cyber_clustered, date_long, health_data, sched_warn,
+                CYBER_FEEDS, "cyber"
+            )
+            tmp = cyber_report.with_suffix(".html.tmp")
+            tmp.write_text(html_cyber, encoding="utf-8")
+            tmp.rename(cyber_report)
+            _log.info("Cyber report saved: %s (%d arts → %d clusters)",
+                      cyber_report.name, len(cyber_arts), len(cyber_clustered))
+
+        # ── Networking report ─────────────────────────────────────────────
+        if network_clustered:
+            html_net = generate_html(
+                network_clustered, date_long, health_data, sched_warn,
+                NETWORK_FEEDS, "network"
+            )
+            tmp = network_report.with_suffix(".html.tmp")
+            tmp.write_text(html_net, encoding="utf-8")
+            tmp.rename(network_report)
+            _log.info("Network report saved: %s (%d arts → %d clusters)",
+                      network_report.name, len(network_arts), len(network_clustered))
+
         generate_index_html()
     except Exception as exc:
         _log.error("Report write failed: %s", exc)
         return False
 
-    _log.info("Report saved: %s (%d articles → %d clusters)", report.name, len(all_arts), len(clustered))
-
-    # ── Email delivery ────────────────────────────────────────────────────
-    n_crit = sum(1 for a in clustered if a["severity"] == "Critical")
-    send_email(html_content, date_long, len(clustered), n_crit)
+    # ── Email delivery (cyber report) ─────────────────────────────────────
+    total_clustered = cyber_clustered + network_clustered
+    n_crit = sum(1 for a in total_clustered if a["severity"] == "Critical")
+    if html_cyber:
+        send_email(html_cyber, date_long, len(total_clustered), n_crit)
 
     # ── Desktop notification (skip on headless) ───────────────────────────
     if not is_headless() and _HAS_PLYER:
         try:
             _plyer_notification.notify(
                 title="CyberDigest",
-                message=f"{len(clustered)} articles ready — {n_crit} critical",
+                message=(f"{len(cyber_clustered)} cyber + {len(network_clustered)} network articles"
+                         f" — {n_crit} critical"),
                 timeout=10,
             )
         except Exception:
@@ -1155,14 +1293,86 @@ def run_agent(is_fallback: bool = False) -> bool:
 
     # ── Open browser (skip on headless) ──────────────────────────────────
     if not is_headless():
-        try:
-            webbrowser.open(report.as_uri())
-        except Exception as exc:
-            _log.warning("Browser open failed: %s", exc)
+        for rpt in [cyber_report, network_report]:
+            if rpt.exists():
+                try:
+                    webbrowser.open(rpt.as_uri())
+                except Exception as exc:
+                    _log.warning("Browser open failed: %s", exc)
     else:
-        print(f"Report saved: {report}")
+        if cyber_report.exists():   print(f"Cyber report:   {cyber_report}")
+        if network_report.exists(): print(f"Network report: {network_report}")
 
     _log.info("=== Run complete ===")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# System Tray GUI
+# ---------------------------------------------------------------------------
+def _gui_open_latest(icon, item):
+    # Try cyber first, then network
+    for pattern in ["cybersec_report_*.html", "network_report_*.html"]:
+        reports = sorted(REPORTS_DIR.glob(pattern), reverse=True)
+        if reports:
+            webbrowser.open(reports[0].as_uri())
+            return
+    print("No reports generated yet.")
+
+
+def _gui_fetch_now(icon, item):
+    _log.info("Manual fetch triggered via GUI.")
+    threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+
+def _gui_edit_config(icon, item):
+    if platform.system() == "Windows":
+        os.startfile(CONFIG_FILE)
+    elif platform.system() == "Darwin":
+        subprocess.run(["open", str(CONFIG_FILE)])
+    else:
+        subprocess.run(["xdg-open", str(CONFIG_FILE)])
+
+def _gui_quit(icon, item):
+    global _SHUTDOWN
+    _SHUTDOWN = True
+    icon.stop()
+
+def _background_scheduler():
+    schedule.every(CONFIG["interval_days"]).days.do(lambda: run_agent(is_fallback=True))
+    while not _SHUTDOWN:
+        schedule.run_pending()
+        time.sleep(60)
+
+def run_tray_gui():
+    img = Image.new('RGB', (64, 64), color=(34, 211, 238))
+    d = ImageDraw.Draw(img)
+    d.rectangle([16, 16, 48, 48], fill=(13, 22, 40))
+    d.polygon([(32, 20), (44, 40), (20, 40)], fill=(167, 139, 250))
+
+    menu = pystray.Menu(
+        item("CyberDigest Agent", lambda: None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        item("Open Latest Digest", _gui_open_latest, default=True),
+        item("Fetch News Now", _gui_fetch_now),
+        item("Edit Config", _gui_edit_config),
+        pystray.Menu.SEPARATOR,
+        item("Quit", _gui_quit)
+    )
+
+    icon = pystray.Icon("CyberDigest", img, "CyberDigest Agent", menu)
+    
+    threading.Thread(target=_background_scheduler, daemon=True).start()
+    
+    # Always open the latest digest immediately when the user starts the app
+    _gui_open_latest(None, None)
+
+    lr = get_last_run()
+    if lr is None or (datetime.now() - lr) >= timedelta(days=CONFIG["interval_days"]) - timedelta(hours=2):
+        threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+
+    _log.info("Starting System Tray GUI...")
+    print("\n[GUI] System Tray mode active. Look for the icon in your taskbar!")
+    icon.run()
     return True
 
 
@@ -1175,7 +1385,8 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python3 news_agent.py                # Normal run\n"
+            "  python3 news_agent.py                # Normal run (GUI on desktop)\n"
+            "  python3 news_agent.py --cli-only     # Force CLI/Server mode\n"
             "  python3 news_agent.py --force        # Force run ignoring last-run time\n"
             "  python3 news_agent.py --healthcheck  # Print full health report\n"
             "  python3 news_agent.py --uninstall    # Remove OS scheduler\n"
@@ -1184,6 +1395,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true", help="Print health report and exit")
     parser.add_argument("--uninstall",   action="store_true", help="Remove OS scheduled task and exit")
     parser.add_argument("--force",       action="store_true", help="Force a run, bypassing last-run check")
+    parser.add_argument("--cli-only",    action="store_true", help="Run without system tray GUI")
     parser.add_argument("--version",     action="version",    version="CyberDigest 4.0")
     args = parser.parse_args()
 
@@ -1203,8 +1415,24 @@ def main() -> int:
         return 1
 
     try:
+        if args.force:
+            print("--force flag set: running immediately.")
+            run_agent(is_fallback=True)
+            return 0
+
+        headless = is_headless()
+        if not headless and not args.cli_only and _HAS_GUI:
+            print("=" * 54)
+            print("  CyberDigest — Desktop Tray Mode v4.0")
+            print("=" * 54)
+            register_scheduler()
+            success = run_tray_gui()
+            if success:
+                return 0
+
+        # Fallback to pure CLI mode (like in Docker or missing GUI packages)
         print("=" * 54)
-        print("  CyberDigest — Production Edition v4.0")
+        print("  CyberDigest — CLI / Server Mode v4.0")
         print("=" * 54)
         print()
 
@@ -1213,10 +1441,7 @@ def main() -> int:
         lr  = get_last_run()
         now = datetime.now()
 
-        if args.force:
-            should_run = True
-            print("--force flag set: running immediately.")
-        elif lr is None:
+        if lr is None:
             should_run = True
             print("First run detected — fetching digest now.")
         elif (now - lr) >= timedelta(days=CONFIG["interval_days"]) - timedelta(hours=2):
@@ -1232,7 +1457,7 @@ def main() -> int:
             retries = 0
             while not check_internet():
                 retries += 1
-                wait = min(30 * retries, 120)   # back off up to 2 h
+                wait = min(30 * retries, 120)
                 _log.warning("No internet — waiting %d min (attempt %d)", wait, retries)
                 print(f"No internet connection. Retrying in {wait} minutes…")
                 time.sleep(wait * 60)
@@ -1241,9 +1466,9 @@ def main() -> int:
             except Exception as exc:
                 _log.error("Unhandled run error: %s", exc, exc_info=True)
 
-        if not registered:
-            _log.warning("OS scheduling failed — running in-process fallback loop.")
-            print("\nOS scheduling failed. Running in background loop — leave window open.")
+        if not registered or args.cli_only:
+            _log.warning("Running in-process fallback loop.")
+            print("\nRunning in background loop — leave window open (or use screen/tmux).")
             sched_interval = CONFIG["interval_days"]
             schedule.every(sched_interval).days.do(lambda: run_agent(is_fallback=True))
             try:
@@ -1254,7 +1479,7 @@ def main() -> int:
                 print("\nStopped.")
         else:
             print()
-            print("✔  Done! CyberDigest is running in the background.")
+            print("✔  Done! CyberDigest is scheduled via OS.")
             print("   Check status.txt or run --healthcheck to verify.")
 
     finally:

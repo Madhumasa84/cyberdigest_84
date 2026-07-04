@@ -865,8 +865,7 @@ def generate_html(arts: list[dict], report_date: str,
     page_title = "CyberDigest" if is_cyber else "NetDigest"
 
     # ── Latest report of the other type (for nav link) ────────────────────
-    other_reports = sorted(REPORTS_DIR.glob(other_glob), reverse=True)
-    other_href    = other_reports[0].name if other_reports else "index.html"
+    other_href = f"network_report_{report_date}.html" if is_cyber else f"cybersec_report_{report_date}.html"
 
     alerts = ""
     if sched_warn:
@@ -1296,7 +1295,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         for rpt in [cyber_report, network_report]:
             if rpt.exists():
                 try:
-                    webbrowser.open(str(rpt.resolve()))
+                    open_local_html(rpt)
                 except Exception as exc:
                     _log.warning("Browser open failed: %s", exc)
     else:
@@ -1310,12 +1309,18 @@ def run_agent(is_fallback: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 # System Tray GUI
 # ---------------------------------------------------------------------------
+def open_local_html(p: Path):
+    if hasattr(os, "startfile"):
+        os.startfile(str(p.resolve()))
+    else:
+        webbrowser.open(p.as_uri())
+
 def _gui_open_latest(icon, item):
     # Try cyber first, then network
     for pattern in ["cybersec_report_*.html", "network_report_*.html"]:
         reports = sorted(REPORTS_DIR.glob(pattern), reverse=True)
         if reports:
-            webbrowser.open(str(reports[0].resolve()))
+            open_local_html(reports[0])
             return
     print("No reports generated yet.")
 

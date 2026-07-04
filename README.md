@@ -11,14 +11,16 @@
 
 ##  What it does
 
-CyberDigest automatically pulls cybersecurity news from **9 trusted sources** every 3 days and generates a stunning, interactive HTML report that opens right in your browser.
+CyberDigest automatically pulls cybersecurity news from **20+ trusted sources** every 3 days and generates **4 stunning, dedicated HTML reports** that open right in your browser.
 
+- 🛡️ **Cybersecurity News**, 🌐 **Networking**, 📋 **Cisco PSIRT**, and 🛡️ **Fortinet PSIRT** in dedicated reports
+- 🔄 **Seamless Cross-Navigation** - switch instantly between the 4 topic reports from the header
 - 🔴 **Critical** / 🟠 **High** / 🔵 **Normal** severity scoring  
 -  **Live search** - filter by keyword, CVE ID, or source  
--  **CVSS scores** pulled live from the NVD database  
+-  **CVSS scores** - pulled live from the NVD database  
 -  **30-day rolling window** - old news auto-deleted, always fresh  
 -  **Runs forever in the background** - survives reboots automatically  
--  **Archive page** - browse all past digests  
+-  **Archive dashboard** - browse all past digests neatly organized by topic  
 
 ---
 
@@ -42,7 +44,7 @@ cd cyberdigest_84
 
 ### Step 3 - Done 
 
-Your browser opens with the digest. Close the terminal window. The agent runs silently in the background forever.
+Your default browser instantly opens with the digests natively on Windows, macOS, or Linux. Close the terminal window. The agent runs silently in the background forever and you can manage it from your system tray!
 
 ---
 
@@ -83,8 +85,11 @@ cyberdigest/
 ├── heartbeat.txt       ← Proof the agent is alive
 ├── agent_log.txt       ← Detailed technical log
 └── reports/
-    ├── index.html      ← Archive of all past digests
-    └── cybersec_report_YYYYMMDD_HHMM.html
+    ├── index.html                  ← Archive dashboard of all past digests
+    ├── cybersec_report_*.html      ← Cybersecurity intelligence report
+    ├── network_report_*.html       ← Networking & Infrastructure report
+    ├── cisco_report_*.html         ← Cisco PSIRT Vulnerability advisories
+    └── fortinet_report_*.html      ← Fortinet PSIRT Vulnerability advisories
 ```
 
 ---
@@ -137,17 +142,12 @@ python3 news_agent.py --uninstall
 
 ## 📡 News Sources
 
-| Source | Focus |
-|---|---|
-| The Hacker News | General cybersecurity |
-| Krebs on Security | Investigations & breaches |
-| Schneier on Security | Analysis & policy |
-| CISA Advisories | US government alerts |
-| Sophos Threat Research | Malware & threats |
-| Microsoft Security Blog | Windows & cloud |
-| Cloudflare Security | Infrastructure & DDoS |
-| WeLiveSecurity (ESET) | Malware research |
-| Graham Cluley | News & commentary |
+| Category | Sources | Focus |
+|---|---|---|
+| **Cybersecurity** | The Hacker News, SecurityWeek, BleepingComputer, Krebs on Security, Schneier, Cisco Talos/Security, Palo Alto, Sophos, CISA, Fortinet Blog, Microsoft, Google Cloud, ESET, Graham Cluley, Cloudflare, Dark Reading | Breaking intel, threats, governance, ransomware |
+| **Networking** | Network World, Packet Pushers, Cisco Blogs, AWS Networking, The New Stack | Enterprise networks, SD-WAN, Cloud infrastructure |
+| **Cisco PSIRT** | Cisco PSIRT Official XML | Dedicated tracking of Cisco hardware/software vulnerabilities |
+| **Fortinet PSIRT** | Fortinet PSIRT Official XML | Dedicated tracking of FortiGuard security advisories |
 
 ---
 
@@ -178,7 +178,7 @@ No. Missed-run catch-up kicks in the moment your computer turns on.
 Run `python3 news_agent.py --uninstall`, then delete the folder.
 
 **Q: Can I add my own RSS feeds?**  
-Yes , edit the `FEEDS` list near the top of `news_agent.py`.
+Yes, edit the `CYBER_FEEDS`, `NETWORK_FEEDS`, `CISCO_PSIRT_FEEDS`, or `FORTINET_PSIRT_FEEDS` lists near the top of `news_agent.py`.
 
 ---
 

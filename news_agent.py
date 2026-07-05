@@ -50,6 +50,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 import threading
+import xml.etree.ElementTree as ET
 
 import feedparser
 import schedule
@@ -98,7 +99,7 @@ CYBER_FEEDS: list[tuple[str, str, str]] = [
     ("Palo Alto Unit 42",      "https://feeds.feedburner.com/Unit42",                              "#fa4616"),
     ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/",     "#9b59b6"),
     # ── Government & vendor advisories ───────────────────────────────────
-    ("CISA Advisories",        "https://www.cisa.gov/cybersecurity-advisories/all.xml",            "#27ae60"),
+    ("CISA Advisories",        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "#27ae60"),
     ("Fortinet Blog",          "https://feeds.feedburner.com/fortinetblog",                        "#ee3124"),
     ("Microsoft Security",     "https://www.microsoft.com/security/blog/feed/",                    "#0078d4"),
     ("Google Cloud Security",  "https://cloudblog.withgoogle.com/rss/",                            "#4285f4"),
@@ -134,6 +135,10 @@ FORTINET_PSIRT_FEEDS: list[tuple[str, str, str]] = [
 ALL_FEEDS: list[tuple[str, str, str]] = CYBER_FEEDS + NETWORK_FEEDS + CISCO_PSIRT_FEEDS + FORTINET_PSIRT_FEEDS
 
 USER_AGENT    = "CyberDigest/4.0 (+https://github.com/cyberdigest)"
+FEED_HEADERS  = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.7",
+}
 FETCH_TIMEOUT = 15
 
 socket.setdefaulttimeout(FETCH_TIMEOUT)
@@ -538,16 +543,124 @@ def score_severity(title: str, summary: str) -> str:
 # ---------------------------------------------------------------------------
 # Feed fetching
 # ---------------------------------------------------------------------------
+class _ParsedFeed:
+    def __init__(self, entries: list[dict]):
+        self.entries = entries
+        self.bozo = False
+
+def _download_feed(url: str) -> bytes:
+    req = urllib.request.Request(url, headers=FEED_HEADERS)
+    with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+        return resp.read()
+
+def _xml_text(node: ET.Element, tag: str) -> str:
+    found = node.find(tag)
+    if found is None:
+        return ""
+    return "".join(found.itertext()).strip()
+
+def _regex_tag_text(block: str, tag: str) -> str:
+    match = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    text = re.sub(r"^\s*<!\[CDATA\[|\]\]>\s*$", "", match.group(1).strip())
+    return strip_html(text)
+
+def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
+    text = raw.decode("utf-8", "replace")
+    entries: list[dict] = []
+    try:
+        root = ET.fromstring(text)
+        for item in root.findall(".//item"):
+            title = _xml_text(item, "title")
+            link = _xml_text(item, "link") or _xml_text(item, "guid")
+            summary = _xml_text(item, "description")
+            pub = _xml_text(item, "pubDate") or _xml_text(item, "{*}date")
+            if title or link:
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
+    except ET.ParseError:
+        for block in re.findall(r"<item\b[^>]*>(.*?)</item>", text, flags=re.IGNORECASE | re.DOTALL):
+            title = _regex_tag_text(block, "title")
+            link = _regex_tag_text(block, "link") or _regex_tag_text(block, "guid")
+            summary = _regex_tag_text(block, "description")
+            pub = _regex_tag_text(block, "pubDate")
+            if title or link:
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
+    return _ParsedFeed(entries)
+
+def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
+    data = json.loads(raw.decode("utf-8", "replace"))
+    entries: list[dict] = []
+    for vuln in data.get("vulnerabilities", []):
+        cve = str(vuln.get("cveID") or "").strip()
+        name = str(vuln.get("vulnerabilityName") or "").strip()
+        vendor = str(vuln.get("vendorProject") or "").strip()
+        product = str(vuln.get("product") or "").strip()
+        date_added = str(vuln.get("dateAdded") or "").strip()
+        notes = str(vuln.get("notes") or "").strip()
+        link_match = re.search(r"https?://\S+", notes)
+        link = link_match.group(0).rstrip(" ;,") if link_match else f"https://nvd.nist.gov/vuln/detail/{cve}"
+        title = f"{cve}: {name}" if cve and name else (name or cve or "CISA Known Exploited Vulnerability")
+        summary_parts = [
+            "Known exploited vulnerability listed by CISA.",
+            f"Affected: {vendor} {product}.".strip(),
+            str(vuln.get("shortDescription") or "").strip(),
+            f"Required action due: {vuln.get('dueDate')}." if vuln.get("dueDate") else "",
+        ]
+        summary = " ".join(part for part in summary_parts if part)
+        item: dict[str, Any] = {
+            "title": title,
+            "link": link,
+            "summary": summary,
+            "published": date_added,
+        }
+        try:
+            item["published_parsed"] = datetime.strptime(date_added, "%Y-%m-%d").timetuple()
+        except ValueError:
+            pass
+        entries.append(item)
+    return _ParsedFeed(entries)
+
 def _fetch_with_retry(name: str, url: str) -> Any:
     delays = [2, 5, 10]
     last_exc: Exception | None = None
     for attempt, delay in enumerate(delays, 1):
         try:
-            p = feedparser.parse(url, agent=USER_AGENT)
+            raw: bytes | None = None
+            try:
+                raw = _download_feed(url)
+                is_json_feed = (
+                    url.lower().endswith(".json")
+                    or "known_exploited_vulnerabilities" in url
+                )
+                if is_json_feed:
+                    parsed_json = _parse_cisa_kev_json(raw)
+                    if parsed_json.entries:
+                        return parsed_json
+                p = feedparser.parse(raw)
+            except Exception as download_exc:
+                _log.debug("Direct feed download failed for %s: %s", name, download_exc)
+                p = feedparser.parse(url, agent=USER_AGENT)
             if not getattr(p, "entries", None):
+                if raw:
+                    fallback = _parse_rss_fallback(raw)
+                    if fallback.entries:
+                        _log.info("Recovered %d entries from malformed feed: %s", len(fallback.entries), name)
+                        return fallback
+                if getattr(p, "bozo", False) and getattr(p, "feed", None):
+                    fallback = _parse_rss_fallback(str(p.feed).encode("utf-8"))
+                    if fallback.entries:
+                        _log.info("Recovered %d entries from malformed feed metadata: %s",
+                                  len(fallback.entries), name)
+                        return fallback
                 if getattr(p, "bozo", False):
                     raise ValueError(f"Feed parse error: {p.bozo_exception}")
                 return []
+            if getattr(p, "bozo", False) and raw:
+                fallback = _parse_rss_fallback(raw)
+                if len(fallback.entries) > len(p.entries):
+                    _log.info("Recovered %d entries from malformed feed: %s", len(fallback.entries), name)
+                    return fallback
             return p
         except Exception as exc:
             last_exc = exc
@@ -851,10 +964,31 @@ def _page(title: str, css: str, body: str) -> str:
         "</head><body>" + body + "</body></html>"
     )
 
+def _latest_report_name(prefix: str) -> str | None:
+    reports = sorted(REPORTS_DIR.glob(f"{prefix}*.html"), reverse=True)
+    return reports[0].name if reports else None
+
+def _first_available_report(report_paths: list[Path]) -> Path | None:
+    for rpt in report_paths:
+        if rpt.exists():
+            return rpt
+    return None
+
+def _latest_report_path() -> Path | None:
+    return _first_available_report([
+        REPORTS_DIR / name for name in [
+            _latest_report_name("cybersec_report_"),
+            _latest_report_name("network_report_"),
+            _latest_report_name("cisco_report_"),
+            _latest_report_name("fortinet_report_"),
+        ] if name
+    ])
+
 def generate_html(arts: list[dict], report_date: str,
                   health_data: dict[str, int], sched_warn: str,
                   feeds_list: list[tuple[str, str, str]],
-                  page_type: str = "cyber") -> str:
+                  page_type: str = "cyber",
+                  nav_targets: dict[str, str] | None = None) -> str:
     # Sort newest-first (most recently updated floats to top) — secondary by severity
     sev_ord = {"Critical": 0, "High": 1, "Normal": 2}
     arts.sort(key=lambda x: (-x["timestamp"], sev_ord.get(x["severity"], 3)))
@@ -874,24 +1008,29 @@ def generate_html(arts: list[dict], report_date: str,
     }
     page_icon, page_label, page_title = TYPE_META.get(page_type, TYPE_META["cyber"])
 
-    # ── Build nav links to sibling pages (point to same date, fallback to latest) ──
-    def _nav_href(prefix: str) -> str:
+    # Use planned filenames from the current run so sibling links do not fall
+    # back to stale reports while the other pages are still being written.
+    nav_targets = nav_targets or {}
+
+    def _nav_href(page: str, prefix: str) -> str:
+        target = nav_targets.get(page)
+        if target:
+            return target
         exact = REPORTS_DIR / f"{prefix}{report_date}.html"
         if exact.exists():
             return exact.name
-        candidates = sorted(REPORTS_DIR.glob(f"{prefix}*.html"), reverse=True)
-        return candidates[0].name if candidates else "index.html"
+        return _latest_report_name(prefix) or "index.html"
 
-    nav_cyber   = _nav_href("cybersec_report_")
-    nav_network = _nav_href("network_report_")
-    nav_cisco   = _nav_href("cisco_report_")
-    nav_fortinet= _nav_href("fortinet_report_")
+    nav_cyber    = _nav_href("cyber", "cybersec_report_")
+    nav_network  = _nav_href("network", "network_report_")
+    nav_cisco    = _nav_href("cisco", "cisco_report_")
+    nav_fortinet = _nav_href("fortinet", "fortinet_report_")
 
     alerts = ""
     if sched_warn:
         alerts += '<div class="alert ai"><span class="ai-ico">&#8505;</span><span>' + sched_warn + "</span></div>"
     for name, _, _ in feeds_list:
-        if health_data.get(name, 0) >= 3:
+        if health_data.get(name, 0) >= 5:
             alerts += ('<div class="alert ae"><span class="ai-ico">&#9888;</span>'
                        "<span><strong>" + h(name) + "</strong> has failed "
                        + str(health_data[name]) + " consecutive times.</span></div>")
@@ -1009,6 +1148,12 @@ def generate_index_html():
     cisco_rows    = _make_rows(cisco_reports,    "cisco_report_",    "&#x1F4CB;")
     fortinet_rows = _make_rows(fortinet_reports, "fortinet_report_", "&#x1F6E1;")
 
+    latest_candidates = []
+    for reports in [cyber_reports, network_reports, cisco_reports, fortinet_reports]:
+        if reports:
+            latest_candidates.append(reports[0])
+    latest_report = _first_available_report(latest_candidates)
+    latest_href = latest_report.name if latest_report else "index.html"
     total = len(cyber_reports) + len(network_reports) + len(cisco_reports) + len(fortinet_reports)
 
     body = (
@@ -1047,7 +1192,7 @@ def generate_index_html():
         + (fortinet_rows or "<p class='no-rep'>No Fortinet PSIRT reports yet.</p>") +
         "</div></div>"
 
-        '<footer class="site-footer"><a href="javascript:history.back()">&#x2190; Back to latest</a></footer>'
+        f'<footer class="site-footer"><a href="{latest_href}">&#x2190; Back to latest</a></footer>'
         "</div>"
     )
     idx = _page("CyberDigest Archive", _CSS + _IDXCSS, body)
@@ -1067,12 +1212,16 @@ def register_scheduler() -> bool:
     interval    = CONFIG["interval_days"]
     try:
         if os_name == "Windows":
-            subprocess.run(
+            res = subprocess.run(
                 ["schtasks", "/Create", "/TN", "CyberDigest",
                  "/TR", f'"{py_exec}" "{script_path}"',
                  "/SC", "DAILY", "/MO", str(interval), "/F"],
-                check=True, capture_output=True,
+                capture_output=True, text=True,
             )
+            if res.returncode != 0:
+                _log.error("schtasks failed (%s): stdout=%s stderr=%s",
+                           res.returncode, res.stdout.strip(), res.stderr.strip())
+                return False
         elif os_name == "Darwin":
             plist = (
                 '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -1195,7 +1344,8 @@ def run_healthcheck() -> int:
     lines.append("  --- Cybersecurity ---")
     for name, url, _ in CYBER_FEEDS:
         try:
-            urllib.request.urlopen(url, timeout=3)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            urllib.request.urlopen(req, timeout=8)
             lines.append(f"  ✔  {name}")
         except Exception:
             lines.append(f"  ✘  {name}")
@@ -1203,7 +1353,8 @@ def run_healthcheck() -> int:
     lines.append("  --- Networking & Infrastructure ---")
     for name, url, _ in NETWORK_FEEDS:
         try:
-            urllib.request.urlopen(url, timeout=3)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            urllib.request.urlopen(req, timeout=8)
             lines.append(f"  ✔  {name}")
         except Exception:
             lines.append(f"  ✘  {name}")
@@ -1211,7 +1362,8 @@ def run_healthcheck() -> int:
     lines.append("  --- Cisco PSIRT ---")
     for name, url, _ in CISCO_PSIRT_FEEDS:
         try:
-            urllib.request.urlopen(url, timeout=5)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            urllib.request.urlopen(req, timeout=10)
             lines.append(f"  ✔  {name}")
         except Exception:
             lines.append(f"  ✘  {name}")
@@ -1219,7 +1371,8 @@ def run_healthcheck() -> int:
     lines.append("  --- Fortinet PSIRT ---")
     for name, url, _ in FORTINET_PSIRT_FEEDS:
         try:
-            urllib.request.urlopen(url, timeout=5)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            urllib.request.urlopen(req, timeout=10)
             lines.append(f"  ✔  {name}")
         except Exception:
             lines.append(f"  ✘  {name}")
@@ -1294,6 +1447,12 @@ def run_agent(is_fallback: bool = False) -> bool:
 
     if not all_arts:
         _log.info("No new articles this run.")
+        generate_index_html()
+        if not is_headless():
+            try:
+                open_latest_report()
+            except Exception as exc:
+                _log.warning("Browser open failed: %s", exc)
         return False
 
     # ── Split by category, cluster each independently ─────────────────────
@@ -1321,13 +1480,20 @@ def run_agent(is_fallback: bool = False) -> bool:
     cisco_report    = REPORTS_DIR / f"cisco_report_{file_date}.html"
     fortinet_report = REPORTS_DIR / f"fortinet_report_{file_date}.html"
 
+    nav_targets = {
+        "cyber": cyber_report.name if cyber_clustered else (_latest_report_name("cybersec_report_") or "index.html"),
+        "network": network_report.name if network_clustered else (_latest_report_name("network_report_") or "index.html"),
+        "cisco": cisco_report.name if cisco_clustered else (_latest_report_name("cisco_report_") or "index.html"),
+        "fortinet": fortinet_report.name if fortinet_clustered else (_latest_report_name("fortinet_report_") or "index.html"),
+    }
+
     html_cyber = ""
     try:
         # ── Cybersecurity report ──────────────────────────────────────────
         if cyber_clustered:
             html_cyber = generate_html(
                 cyber_clustered, file_date, health_data, sched_warn,
-                CYBER_FEEDS, "cyber"
+                CYBER_FEEDS, "cyber", nav_targets
             )
             tmp = cyber_report.with_suffix(".html.tmp")
             tmp.write_text(html_cyber, encoding="utf-8")
@@ -1339,7 +1505,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         if network_clustered:
             html_net = generate_html(
                 network_clustered, file_date, health_data, sched_warn,
-                NETWORK_FEEDS, "network"
+                NETWORK_FEEDS, "network", nav_targets
             )
             tmp = network_report.with_suffix(".html.tmp")
             tmp.write_text(html_net, encoding="utf-8")
@@ -1351,7 +1517,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         if cisco_clustered:
             html_cisco = generate_html(
                 cisco_clustered, file_date, health_data, sched_warn,
-                CISCO_PSIRT_FEEDS, "cisco"
+                CISCO_PSIRT_FEEDS, "cisco", nav_targets
             )
             tmp = cisco_report.with_suffix(".html.tmp")
             tmp.write_text(html_cisco, encoding="utf-8")
@@ -1363,7 +1529,7 @@ def run_agent(is_fallback: bool = False) -> bool:
         if fortinet_clustered:
             html_fortinet = generate_html(
                 fortinet_clustered, file_date, health_data, sched_warn,
-                FORTINET_PSIRT_FEEDS, "fortinet"
+                FORTINET_PSIRT_FEEDS, "fortinet", nav_targets
             )
             tmp = fortinet_report.with_suffix(".html.tmp")
             tmp.write_text(html_fortinet, encoding="utf-8")
@@ -1395,15 +1561,16 @@ def run_agent(is_fallback: bool = False) -> bool:
             pass
 
     # ── Open browser (skip on headless) ──────────────────────────────────
+    report_paths = [cyber_report, network_report, cisco_report, fortinet_report]
     if not is_headless():
-        for rpt in [cyber_report, network_report, cisco_report, fortinet_report]:
-            if rpt.exists():
-                try:
-                    open_local_html(rpt)
-                except Exception as exc:
-                    _log.warning("Browser open failed: %s", exc)
+        rpt = _first_available_report(report_paths)
+        if rpt:
+            try:
+                open_local_html(rpt)
+            except Exception as exc:
+                _log.warning("Browser open failed: %s", exc)
     else:
-        for rpt in [cyber_report, network_report, cisco_report, fortinet_report]:
+        for rpt in report_paths:
             if rpt.exists(): print(f"Report: {rpt}")
 
     _log.info("=== Run complete ===")
@@ -1419,19 +1586,22 @@ def open_local_html(p: Path):
     else:
         webbrowser.open(p.as_uri())
 
+def open_latest_report() -> bool:
+    rpt = _latest_report_path()
+    if not rpt:
+        return False
+    open_local_html(rpt)
+    return True
+
 def _gui_open_latest(icon, item):
-    # Try cyber first, then network
-    for pattern in ["cybersec_report_*.html", "network_report_*.html"]:
-        reports = sorted(REPORTS_DIR.glob(pattern), reverse=True)
-        if reports:
-            open_local_html(reports[0])
-            return
+    if open_latest_report():
+        return
     print("No reports generated yet.")
 
 
 def _gui_fetch_now(icon, item):
     _log.info("Manual fetch triggered via GUI.")
-    threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+    threading.Thread(target=lambda: run_agent(is_fallback=False), daemon=True).start()
 
 def _gui_edit_config(icon, item):
     if platform.system() == "Windows":
@@ -1446,13 +1616,13 @@ def _gui_quit(icon, item):
     _SHUTDOWN = True
     icon.stop()
 
-def _background_scheduler():
-    schedule.every(CONFIG["interval_days"]).days.do(lambda: run_agent(is_fallback=True))
+def _background_scheduler(is_fallback: bool):
+    schedule.every(CONFIG["interval_days"]).days.do(lambda: run_agent(is_fallback=is_fallback))
     while not _SHUTDOWN:
         schedule.run_pending()
         time.sleep(60)
 
-def run_tray_gui():
+def run_tray_gui(scheduler_registered: bool = False):
     img = Image.new('RGB', (64, 64), color=(34, 211, 238))
     d = ImageDraw.Draw(img)
     d.rectangle([16, 16, 48, 48], fill=(13, 22, 40))
@@ -1470,14 +1640,14 @@ def run_tray_gui():
 
     icon = pystray.Icon("CyberDigest", img, "CyberDigest Agent", menu)
     
-    threading.Thread(target=_background_scheduler, daemon=True).start()
+    threading.Thread(target=lambda: _background_scheduler(not scheduler_registered), daemon=True).start()
     
     # Always open the latest digest immediately when the user starts the app
     _gui_open_latest(None, None)
 
     lr = get_last_run()
     if lr is None or (datetime.now() - lr) >= timedelta(days=CONFIG["interval_days"]) - timedelta(hours=2):
-        threading.Thread(target=lambda: run_agent(is_fallback=True), daemon=True).start()
+        threading.Thread(target=lambda: run_agent(is_fallback=not scheduler_registered), daemon=True).start()
 
     _log.info("Starting System Tray GUI...")
     print("\n[GUI] System Tray mode active. Look for the icon in your taskbar!")
@@ -1521,12 +1691,18 @@ def main() -> int:
     if not acquire_lock():
         print("Another instance of CyberDigest is already running. Exiting.")
         _log.warning("Could not acquire lock — another instance running.")
+        if not is_headless() and open_latest_report():
+            print("Opened the latest digest in your browser.")
+            return 0
         return 1
 
     try:
         if args.force:
             print("--force flag set: running immediately.")
-            run_agent(is_fallback=True)
+            # Check actual scheduler state so the "scheduling warning" doesn't
+            # appear in forced runs when cron is already registered.
+            registered = verify_scheduler()
+            run_agent(is_fallback=not registered)
             return 0
 
         headless = is_headless()
@@ -1534,8 +1710,8 @@ def main() -> int:
             print("=" * 54)
             print("  CyberDigest — Desktop Tray Mode v4.0")
             print("=" * 54)
-            register_scheduler()
-            success = run_tray_gui()
+            registered = register_scheduler()
+            success = run_tray_gui(registered)
             if success:
                 return 0
 
@@ -1561,6 +1737,8 @@ def main() -> int:
             next_run   = lr + timedelta(days=CONFIG["interval_days"])
             print(f"Already ran recently ({lr.strftime('%Y-%m-%d %H:%M')}).")
             print(f"Next scheduled run: {next_run.strftime('%Y-%m-%d %H:%M')}.")
+            if not headless and open_latest_report():
+                print("Opened the latest digest in your browser.")
 
         if should_run:
             retries = 0

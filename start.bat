@@ -76,7 +76,7 @@ set VENV_PIP=venv\Scripts\pip.exe
 
 :: ── 4. Install dependencies ───────────────────────────────
 echo   ...  Checking dependencies...
-%VENV_PYTHON% -c "import feedparser, schedule, plyer" >nul 2>&1
+%VENV_PYTHON% -c "import feedparser, schedule, plyer, pystray; from PIL import Image" >nul 2>&1
 if !errorlevel! neq 0 (
     echo   ...  Installing packages ^(first run, takes ~30 seconds^)...
     %VENV_PIP% install --quiet -r requirements.txt

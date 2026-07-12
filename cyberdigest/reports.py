@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cyberdigest.config import get_config
 from cyberdigest.enrich import format_with_cves
+from cyberdigest.logging_setup import log
 from cyberdigest.paths import ASSETS_DIR, REPORTS_DIR
 from cyberdigest.textutil import h, reading_time, safe_http_url
 
@@ -107,22 +108,90 @@ def latest_report_path() -> Path | None:
     )
 
 
-def open_local_html(p: Path) -> None:
+def open_local_html(p: Path) -> bool:
+    """
+    Open a local HTML report in the default browser.
+
+    Tries platform-native openers first (most reliable for file:// pages),
+    then falls back to the webbrowser module. Always prints the path so the
+    user can open it manually if every opener fails.
+    """
     import os
+    import platform
+    import subprocess
     import webbrowser
 
-    if hasattr(os, "startfile"):
-        os.startfile(str(p.resolve()))  # type: ignore[attr-defined]
+    path = p.resolve()
+    if not path.exists():
+        log.warning("Cannot open missing report: %s", path)
+        print(f"Report not found: {path}")
+        return False
+
+    path_str = str(path)
+    uri = path.as_uri()
+    errors: list[str] = []
+    system = platform.system()
+
+    def _try(label: str, fn) -> bool:
+        try:
+            fn()
+            log.info("Opened report via %s: %s", label, path_str)
+            return True
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+            log.debug("Open via %s failed: %s", label, exc)
+            return False
+
+    opened = False
+    if system == "Windows" and hasattr(os, "startfile"):
+        opened = _try("startfile", lambda: os.startfile(path_str))  # type: ignore[attr-defined]
+    elif system == "Darwin":
+        opened = _try(
+            "open",
+            lambda: subprocess.run(["open", path_str], check=True, timeout=15),
+        )
     else:
-        webbrowser.open(p.as_uri())
+        # Linux / *nix — xdg-open is far more reliable than webbrowser for local files
+        for cmd in (["xdg-open", path_str], ["gio", "open", path_str]):
+            if opened:
+                break
+
+            def _xdg(c=cmd):
+                # Don't wait forever — browser may keep process open
+                subprocess.Popen(
+                    c,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+
+            opened = _try(cmd[0], _xdg)
+
+    if not opened:
+        # webbrowser often fails for file:// on Linux, but try as last resort
+        opened = _try(
+            "webbrowser",
+            lambda: webbrowser.open(uri, new=2) or True,
+        )
+
+    # Always show the path so users can open it with one click/copy
+    print(f"\n  📄 Report ready: {path_str}")
+    if opened:
+        print("  (opened in your default browser)\n")
+    else:
+        print("  Could not auto-open the browser. Open the file above manually.")
+        if errors:
+            log.warning("Browser open attempts failed: %s", "; ".join(errors))
+        print()
+    return opened
 
 
 def open_latest_report() -> bool:
     rpt = latest_report_path()
     if not rpt:
+        print("No reports generated yet — run a fetch first.")
         return False
-    open_local_html(rpt)
-    return True
+    return open_local_html(rpt)
 
 
 def generate_html(

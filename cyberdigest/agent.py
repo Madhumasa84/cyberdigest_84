@@ -19,7 +19,6 @@ from cyberdigest.reports import (
     first_available_report,
     generate_html,
     generate_index_html,
-    open_latest_report,
     open_local_html,
 )
 from cyberdigest.scoring import cluster
@@ -106,11 +105,18 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     if not all_arts:
         log.info("No new articles this run.")
         generate_index_html()
-        if not is_headless():
+        from cyberdigest.reports import latest_report_path
+
+        lp = latest_report_path()
+        if lp and not is_headless():
             try:
-                open_latest_report()
+                open_local_html(lp)
             except Exception as exc:
                 log.warning("Browser open failed: %s", exc)
+        elif lp:
+            print(f"Report: {lp.resolve()}")
+        else:
+            print("No previous reports to open. Try again after feeds return news.")
         return False
 
     cyber_arts = [a for a in all_arts if a.get("category") == "cyber"]
@@ -258,17 +264,18 @@ def run_agent(*, is_fallback: bool = False) -> bool:
             pass
 
     report_paths = [cyber_report, network_report, cisco_report, fortinet_report]
-    if not is_headless():
-        rpt = first_available_report(report_paths)
-        if rpt:
+    rpt = first_available_report(report_paths)
+    if rpt:
+        if is_headless():
+            print(f"Report: {rpt.resolve()}")
+        else:
             try:
                 open_local_html(rpt)
             except Exception as exc:
                 log.warning("Browser open failed: %s", exc)
+                print(f"\n  📄 Open this report manually:\n     {rpt.resolve()}\n")
     else:
-        for rpt in report_paths:
-            if rpt.exists():
-                print(f"Report: {rpt}")
+        log.warning("Run finished but no report files were written.")
 
     log.info("=== Run complete ===")
     return True

@@ -23,23 +23,30 @@ def test_open_latest_missing(isolated_app, monkeypatch):
     assert reports.open_latest_report() is False
 
 
-def test_open_local_html_webbrowser(isolated_app, monkeypatch, tmp_path):
-    import webbrowser
-
+def test_open_local_html_uses_xdg_or_webbrowser(isolated_app, monkeypatch, tmp_path):
     import cyberdigest.reports as reports
 
-    opened = {}
-    monkeypatch.setattr(webbrowser, "open", lambda uri: opened.setdefault("uri", uri))
-    # Ensure startfile path is not taken
-    monkeypatch.setattr(reports, "open_local_html", reports.open_local_html)
     f = tmp_path / "x.html"
-    f.write_text("hi", encoding="utf-8")
+    f.write_text("<html>hi</html>", encoding="utf-8")
 
-    # Call real implementation with webbrowser patched at module used inside function
-    import os
+    called = {"xdg": False}
 
-    if hasattr(os, "startfile"):
-        monkeypatch.delattr(os, "startfile", raising=False)
+    def fake_popen(cmd, **kwargs):
+        called["xdg"] = True
+        called["cmd"] = cmd
 
-    reports.open_local_html(f)
-    assert "uri" in opened or True  # may use startfile on some systems
+        class P:
+            pass
+
+        return P()
+
+    monkeypatch.setattr(reports.platform if hasattr(reports, "platform") else __import__("platform"), "system", lambda: "Linux")
+    import platform
+    import subprocess
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    ok = reports.open_local_html(f)
+    assert ok is True
+    assert called["xdg"] is True

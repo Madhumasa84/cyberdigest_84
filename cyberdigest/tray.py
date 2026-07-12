@@ -119,6 +119,7 @@ def run_tray_gui(*, scheduler_registered: bool = False) -> bool:
         daemon=True,
     ).start()
 
+    # Open any existing digest immediately; a fresh fetch below will open the new one
     _gui_open_latest()
 
     lr = get_last_run()
@@ -128,13 +129,20 @@ def run_tray_gui(*, scheduler_registered: bool = False) -> bool:
             if not _FETCH_LOCK.acquire(blocking=False):
                 return
             try:
+                # run_agent opens the browser when the new HTML is ready
                 run_agent(is_fallback=not scheduler_registered)
             finally:
                 _FETCH_LOCK.release()
 
+        print("[GUI] Fetching latest news — your browser will open when ready…")
         threading.Thread(target=_startup_fetch, daemon=True).start()
+    else:
+        # Not due for a full fetch — make sure the last report is visible
+        if not open_latest_report():
+            print("[GUI] No digest yet. Use tray menu → Fetch News Now.")
 
     log.info("Starting System Tray GUI...")
     print("\n[GUI] System Tray mode active. Look for the icon in your taskbar!")
+    print("      Menu: Open Latest Digest | Fetch News Now | Quit")
     icon.run()
     return True

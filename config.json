@@ -1,6 +1,10 @@
 {
     "interval_days": 3,
     "max_archived_reports": 30,
+    "archive_global": true,
+    "max_articles_per_feed": 8,
+    "max_articles_per_network_feed": 5,
+    "log_level": "INFO",
     "critical_keywords": [
         "cve-",
         "zero-day",
@@ -15,5 +19,7 @@
         "flaw",
         "patch"
     ],
-    "max_articles_per_feed": 8
+    "nvd_enabled": true,
+    "nvd_max_lookups": 15,
+    "nvd_timeout_seconds": 25
 }

@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip build twine
+          pip install -r requirements-dev.txt
+
+      - name: Verify
+        run: |
+          ruff check cyberdigest tests news_agent.py
+          pytest -q --cov=cyberdigest --cov-fail-under=80
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Create GitHub Release with artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*
+            LICENSE
+            README.md
+            CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

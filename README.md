@@ -1,187 +1,312 @@
-#  CyberDigest
+# CyberDigest
 
-> **A self-healing, reboot-proof cybersecurity news agent for everyone.**  
-> Clone it. Run one file. Get a beautiful daily digest — forever.
+> **A self-healing, reboot-proof cybersecurity news agent.**  
+> Clone it. Run one command. Get multi-page HTML digests — forever.
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
+![Version](https://img.shields.io/badge/version-4.3-informational)
+![CI](https://img.shields.io/badge/CI-ubuntu%20%7C%20windows%20%7C%20macos-success)
+![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen)
 
 ---
 
-##  What it does
+## What it does
 
-CyberDigest automatically pulls cybersecurity news from **9 trusted sources** every 3 days and generates a stunning, interactive HTML report that opens right in your browser.
+CyberDigest pulls news from **24+ sources** across four categories and builds interactive HTML digests:
 
-- 🔴 **Critical** / 🟠 **High** / 🔵 **Normal** severity scoring  
--  **Live search** - filter by keyword, CVE ID, or source  
--  **CVSS scores** pulled live from the NVD database  
--  **30-day rolling window** - old news auto-deleted, always fresh  
--  **Runs forever in the background** - survives reboots automatically  
--  **Archive page** - browse all past digests  
+| Report | Focus |
+|--------|--------|
+| **Cybersecurity** | Threat intel, breaches, research blogs, CISA KEV |
+| **Networking** | Enterprise networking, cloud, architecture |
+| **Cisco PSIRT** | Official Cisco security advisories |
+| **Fortinet PSIRT** | Official Fortinet security advisories |
+
+**Highlights**
+
+- Severity scoring (Critical / High / Normal) with CVE-aware heuristics  
+- Live CVSS badges from NVD (cached in SQLite)  
+- Cross-source fuzzy deduplication  
+- Archive page with rolling retention  
+- System tray GUI (desktop) or headless Docker (servers)  
+- OS-native scheduling **or** single in-process fallback (never both)  
+- Optional email delivery via SMTP  
 
 ---
 
-##  Quick Start (3 steps)
+## Quick start (one click)
 
-### Step 1 - Clone the repo
+### 1. Clone (once)
 
 ```bash
 git clone https://github.com/Madhumasa84/cyberdigest_84.git
 cd cyberdigest_84
 ```
 
-### Step 2 - Run the launcher
+### 2. Start — pick your OS
 
-| OS | Command |
-|---|---|
-| **Windows** | Double-click `start.bat` |
-| **macOS / Linux** | Run `bash start.sh` in terminal |
+| OS | One-click action |
+|----|------------------|
+| **Windows** | Double-click **`start.bat`** |
+| **macOS** | Double-click **`start.command`** *(right-click → Open the first time if Gatekeeper blocks it)* |
+| **Linux** | Double-click **`start.sh`** in the file manager, or run `bash start.sh` |
 
-> That's it. The launcher installs Python packages, runs the agent, and registers it to run automatically every 3 days - even after a reboot.
+The launcher:
 
-### Step 3 - Done 
+1. Switches to the project folder (safe for double-click)  
+2. Finds or installs Python 3  
+3. Creates `venv` and installs packages on first run  
+4. Starts CyberDigest (tray on desktop, report in browser)  
+5. Registers OS scheduling when possible  
 
-Your browser opens with the digest. Close the terminal window. The agent runs silently in the background forever.
+### 3. Done
+
+- Browser opens the digest  
+- Tray icon (desktop) for “Fetch now” / “Open latest”  
+- Close the terminal after setup if scheduling registered  
+
+**No config required** for the default experience. Optional: `config.local.json` or env vars for NVD/email secrets.
 
 ---
 
-##  Docker (For Servers / Advanced Users)
-
-Want to run it headlessly on a 24/7 server without the desktop UI? Just use Docker:
+## Docker (servers)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cyberdigest.git
-cd cyberdigest
-docker-compose up -d
+git clone https://github.com/Madhumasa84/cyberdigest_84.git
+cd cyberdigest_84
+docker compose up -d
 ```
-Docker will build the environment and run the agent entirely in the background. It automatically detects it's running headlessly and skips browser popups, safely writing your reports to the `reports/` folder.
+
+- Runs headlessly (`CYBERDIGEST_HEADLESS=1`)
+- Persists state in a named volume (`cyberdigest-data`)
+- Writes HTML reports to `./reports` on the host
+- Uses an in-process schedule (no host cron required)
 
 ---
 
-##  Requirements
+## Project structure
 
-- **Python 3.8+** - [Download here](https://www.python.org/downloads/) *(check "Add to PATH" on Windows)*
-- Internet connection
-- ~50 MB disk space
+```
+cyberdigest_84/
+├── news_agent.py           # Backward-compatible entrypoint
+├── cyberdigest/            # Application package
+│   ├── agent.py            # Fetch → score → enrich → report pipeline
+│   ├── feeds.py            # Feed catalog + fetch/parse
+│   ├── scoring.py          # Severity + clustering
+│   ├── enrich.py           # CVE/NVD enrichment (pre-render, budgeted)
+│   ├── reports.py          # HTML generators
+│   ├── scheduler.py        # cron / schtasks / launchd
+│   ├── tray.py             # System tray GUI
+│   ├── config.py           # Config + env secrets
+│   ├── db.py               # SQLite
+│   ├── cli.py              # CLI entry
+│   └── assets/             # CSS / JS for reports
+├── feeds.yaml              # Editable feed list (no code changes)
+├── config.json             # Non-secret settings (safe defaults)
+├── config.example.json     # Documented template
+├── config.local.json       # Optional secrets (gitignored)
+├── start.bat               # Windows one-click
+├── start.command           # macOS one-click
+├── start.sh                # Linux / macOS launcher
+├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile
+├── CHANGELOG.md
+├── SECURITY.md
+├── deploy/                 # systemd unit + .desktop shortcut
+├── scripts/                # verify_all.sh, security_check.sh
+├── .github/workflows/      # CI (3 OS) + release
+└── tests/
+```
 
-No other setup needed - everything else is installed automatically.
+Runtime data (gitignored): `state.db`, `reports/`, `agent_log.txt`, `status.txt`, `heartbeat.txt`, `agent.lock`.
 
 ---
 
-##  Project Structure
+## Configuration
 
-```
-cyberdigest/
-├── news_agent.py       ← The entire agent (single file)
-├── start.sh            ← Launcher for macOS / Linux
-├── start.bat           ← Launcher for Windows
-├── requirements.txt    ← Python dependencies
-├── config.json         ← Auto-generated settings (editable)
-├── state.db            ← Article history database (auto-created)
-├── status.txt          ← Last run summary (human-readable)
-├── heartbeat.txt       ← Proof the agent is alive
-├── agent_log.txt       ← Detailed technical log
-└── reports/
-    ├── index.html      ← Archive of all past digests
-    └── cybersec_report_YYYYMMDD_HHMM.html
-```
-
----
-
-##  Configuration
-
-Edit `config.json` (auto-created on first run) to customise behaviour:
+### `config.json`
 
 ```json
 {
     "interval_days": 3,
     "max_archived_reports": 30,
+    "archive_global": true,
     "max_articles_per_feed": 8,
-    "critical_keywords": ["cve-", "zero-day", "ransomware", "breach", "rce"],
-    "high_keywords": ["vulnerability", "flaw", "patch"],
-    "email": {
-        "enabled": false,
-        "smtp_host": "smtp.gmail.com",
-        "smtp_port": 587,
-        "username": "your_email@gmail.com",
-        "password": "your_app_password",
-        "from_addr": "your_email@gmail.com",
-        "to_addrs": ["recipient@example.com"]
-    },
-    "nvd_api_key": ""
+    "max_articles_per_network_feed": 5,
+    "log_level": "INFO",
+    "email": { "enabled": false },
+    "nvd_api_key": "",
+    "nvd_enabled": true,
+    "nvd_max_lookups": 15,
+    "nvd_timeout_seconds": 25
 }
 ```
 
-> **Email setup:** Set `"enabled": true` and provide your SMTP details to have the digest automatically emailed to you every run.
-> **NVD API Key:** Getting a free key from the [National Vulnerability Database](https://nvd.nist.gov/developers/request-an-api-key) prevents rate-limiting and makes CVE lookups much faster.
+| Key | Meaning |
+|-----|---------|
+| `archive_global` | `true` = max N reports **total**; `false` = N **per category** |
+| `interval_days` | Days between digests |
+| `nvd_max_lookups` | Max live NVD HTTP calls per run (cache free) |
+| `nvd_timeout_seconds` | Wall-clock budget for live NVD lookups |
 
-After editing, run the launcher once to re-register the new schedule.
+### Secrets (do not commit)
+
+Prefer **environment variables** or **`config.local.json`** (gitignored):
+
+| Variable | Purpose |
+|----------|---------|
+| `NVD_API_KEY` / `CYBERDIGEST_NVD_API_KEY` | NVD rate limits |
+| `CYBERDIGEST_SMTP_PASSWORD` | SMTP password / app password |
+| `CYBERDIGEST_SMTP_USERNAME` | SMTP user |
+| `CYBERDIGEST_EMAIL_FROM` / `CYBERDIGEST_EMAIL_TO` | Addresses |
+| `CYBERDIGEST_EMAIL_ENABLED` | `true` to enable email |
+| `CYBERDIGEST_HEADLESS` | Force headless mode |
+| `CYBERDIGEST_DATA_DIR` | Relocate DB/logs/reports |
+
+Example `config.local.json`:
+
+```json
+{
+    "nvd_api_key": "your-nvd-key",
+    "email": {
+        "enabled": true,
+        "username": "you@gmail.com",
+        "password": "app-password",
+        "from_addr": "you@gmail.com",
+        "to_addrs": ["you@gmail.com"]
+    }
+}
+```
+
+### Feeds
+
+Edit `feeds.yaml` to add or remove sources. No Python edits required.
 
 ---
 
-##  CLI Commands
+## CLI
 
 ```bash
-# Force a run immediately (ignores the 3-day interval check)
+# Normal run (tray on desktop, CLI when headless)
+python3 news_agent.py
+
+# Or as a module
+python3 -m cyberdigest
+
+# Force a run now (still exits after one cycle)
 python3 news_agent.py --force
 
-# Full health report - scheduler, DB, feeds, disk, internet, lock files
+# One digest then exit — no background loop (great for servers/cron)
+python3 news_agent.py --once --cli-only
+
+# Force + one-shot
+python3 news_agent.py --force --once --cli-only
+
+# Health report
 python3 news_agent.py --healthcheck
 
-# Remove background scheduling (keeps all reports)
+# Health report that requires OS scheduler (desktop installs)
+python3 news_agent.py --healthcheck --require-scheduler
+
+# CLI only (no tray; may keep a fallback loop unless --once)
+python3 news_agent.py --cli-only
+
+# Remove OS schedule
 python3 news_agent.py --uninstall
+
+# Version
+python3 news_agent.py --version
 ```
 
 ---
 
-##  News Sources
+## Scheduling model
 
-| Source | Focus |
-|---|---|
-| The Hacker News | General cybersecurity |
-| Krebs on Security | Investigations & breaches |
-| Schneier on Security | Analysis & policy |
-| CISA Advisories | US government alerts |
-| Sophos Threat Research | Malware & threats |
-| Microsoft Security Blog | Windows & cloud |
-| Cloudflare Security | Infrastructure & DDoS |
-| WeLiveSecurity (ESET) | Malware research |
-| Graham Cluley | News & commentary |
+| Context | Behavior |
+|---------|----------|
+| Desktop + OS schedule OK | OS cron/schtasks/launchd only |
+| Desktop + schedule failed | In-process `schedule` loop (keep process alive) |
+| Docker / headless | In-process loop only (no host crontab mutation) |
+| Tray open + OS schedule | Tray does **not** double-run; OS fires separate jobs |
 
 ---
 
-##  How Scheduling Works
+## Development & quality bar
 
-| OS | Method |
-|---|---|
-| Windows | Task Scheduler (`schtasks`) |
-| macOS | LaunchAgent (`launchctl`) |
-| Linux | Cron (`crontab`) |
+```bash
+python3 -m venv venv
+source venv/bin/activate
+make install-dev
 
-The agent **verifies** the task was registered after creating it. If registration fails, it falls back to an in-process loop and shows a notice in the report.
+# Full local gate (lint + coverage ≥80% + CLI smoke + pip-audit)
+make verify
+# or
+bash scripts/verify_all.sh
+
+# Tests / security only
+make test
+make test-cov
+make security
+```
+
+| Check | Command | Gate |
+|-------|---------|------|
+| Lint | `ruff check …` | clean |
+| Unit + integration | `pytest` | all green |
+| Coverage | `pytest --cov=cyberdigest` | **≥ 80%** |
+| Dependency audit | `pip-audit -r requirements.txt` | clean |
+| CLI smoke | `--version` / `--help` | exit 0 |
+| CI | Ubuntu + Windows + macOS | on push/PR |
+| Release | tag `v*` | build + GitHub Release |
+
+Production Linux: `deploy/cyberdigest.service`. Desktop shortcut template: `deploy/cyberdigest.desktop`.
+
+### NVD budget (keeps digests fast)
+
+| Config key | Default | Meaning |
+|------------|---------|---------|
+| `nvd_enabled` | `true` | Master switch |
+| `nvd_max_lookups` | `15` | Max live NVD HTTP calls per run |
+| `nvd_timeout_seconds` | `25` | Wall-clock budget for live lookups |
+| `nvd_api_key` / `NVD_API_KEY` | empty | Higher rate limits when set |
+
+Cache hits do not count toward the budget.
 
 ---
 
-##  FAQ
+## News sources (defaults)
 
-**Q: Do I need to keep the terminal open?**  
-No. The OS scheduler takes over after the first run. Close it freely.
-
-**Q: My internet was down when it ran. What happens?**  
-The agent detects the outage, waits 30 minutes, and retries - no empty reports.
-
-**Q: I was away for 2 weeks. Did I miss digests?**  
-No. Missed-run catch-up kicks in the moment your computer turns on.
-
-**Q: How do I completely uninstall?**  
-Run `python3 news_agent.py --uninstall`, then delete the folder.
-
-**Q: Can I add my own RSS feeds?**  
-Yes , edit the `FEEDS` list near the top of `news_agent.py`.
+See `feeds.yaml` for the full list. Includes The Hacker News, Krebs, Schneier, CISA KEV, Cisco Talos, Unit 42, Microsoft Security, Dark Reading, Network World, Packet Pushers, Cisco/Fortinet PSIRT, and more.
 
 ---
 
-##  License
+## FAQ
 
-MIT - free for personal and commercial use.
+**Is it really one click?**  
+After clone/unzip: yes — double-click `start.bat` / `start.command` / `start.sh`. First run installs packages (~30s). macOS may ask you to “Open” once (Gatekeeper). Linux may need “Allow executing as program” on `start.sh`.
+
+**Do I need to keep the terminal open?**  
+Only if OS scheduling failed (fallback loop), or you used `--cli-only` without `--once`. Otherwise close freely after setup.
+
+**Internet was down during a run?**  
+The agent waits and retries; empty digests are avoided when offline at start.
+
+**How do I uninstall?**  
+`python3 news_agent.py --uninstall`, then delete the folder.
+
+**Where do I put API keys?**  
+`config.local.json` or environment variables — never commit them. See `SECURITY.md`.
+
+**Why are some CVSS badges missing?**  
+NVD lookups are budgeted per run (`nvd_max_lookups` / `nvd_timeout_seconds`) so digests stay fast. Set `NVD_API_KEY` for more lookups and higher rate limits. Cached scores are reused next run.
+
+---
+
+## License
+
+MIT — free for personal and commercial use. See `CHANGELOG.md` for version history.

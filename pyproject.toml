@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyberdigest"
+version = "4.3.0"
+description = "Self-healing cybersecurity news agent — multi-source digests with HTML reports"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Madhumasa84" }]
+dependencies = [
+    "feedparser==6.0.12",
+    "schedule==1.2.2",
+    "plyer==2.1.0",
+    "pystray==0.19.5",
+    "Pillow==12.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+cyberdigest = "cyberdigest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cyberdigest*"]
+
+[tool.setuptools.package-data]
+cyberdigest = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["cyberdigest"]
+branch = true
+omit = [
+    "cyberdigest/tray.py",
+    "cyberdigest/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "except Exception",
+]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 100
+src = ["cyberdigest", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = [
+    "E501",  # line length — HTML builders are long
+    "B008",
+    "UP006",
+    "UP007",
+    "UP035",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "F401"]
+"news_agent.py" = ["E402"]  # path bootstrap before package import

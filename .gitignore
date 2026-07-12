@@ -1,15 +1,22 @@
-# ── Generated files (never commit these) ──
+# ── Runtime / generated ──
 venv/
 state.db
+*.db
 agent_log.txt
+agent_log.txt.*
 heartbeat.txt
 status.txt
+agent.lock
 reports/
+config.local.json
+.env
+.env.*
 
-# ── Config is intentionally committed ──
-# config.json is kept so cloners get sensible defaults
+# ── Config: example is committed; personal secrets are not ──
+# config.json may hold non-secret defaults and is OK to commit.
+# Put passwords / API keys in config.local.json or environment variables.
 
-# ── Python standard ignores ──
+# ── Python ──
 __pycache__/
 *.py[cod]
 *.pyo
@@ -19,14 +26,18 @@ __pycache__/
 dist/
 build/
 .eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.kimchi/
 
-# ── OS junk ──
+# ── OS / editor ──
 .DS_Store
 Thumbs.db
 desktop.ini
 *~
-
-# ── Editor junk ──
 .vscode/
 .idea/
 *.swp

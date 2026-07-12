@@ -1,11 +1,14 @@
 @echo off
 setlocal enabledelayedexpansion
-title CyberDigest — Automated Threat Intelligence
+title CyberDigest — One-click launcher
+
+:: Always run from this script's folder (double-click safe)
+cd /d "%~dp0"
 
 echo.
 echo   +==========================================+
 echo   ^|      CyberDigest Agent                   ^|
-echo   ^|   Automated Threat Intelligence          ^|
+echo   ^|   One-click threat intelligence          ^|
 echo   +==========================================+
 echo.
 
@@ -26,83 +29,75 @@ for %%P in (python3 python) do (
 )
 
 if "!PYTHON!"=="" (
-    echo   [INFO] Python 3 not found. Attempting automatic installation...
-    echo   ...  Downloading Python installer ^(this may take a minute^)...
+    echo   [INFO] Python 3 not found. Downloading installer...
     curl -L -o python_installer.exe "https://www.python.org/ftp/python/3.11.8/python-3.11.8-amd64.exe"
     if !errorlevel! neq 0 (
-        echo   [ERROR] Failed to download Python. Check your internet connection.
+        echo   [ERROR] Download failed. Install Python from https://www.python.org/downloads/
+        echo   Check "Add python.exe to PATH" during install, then re-run start.bat
         pause
         exit /b 1
     )
-    
-    echo   ...  Installing Python silently ^(this may take a few minutes^)...
+    echo   ...  Installing Python silently...
     start /wait python_installer.exe /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
     del python_installer.exe
-    
-    echo   ...  Python installed!
-    
-    :: Try to locate the newly installed Python
     set "NEW_PY_PATH=!LocalAppData!\Programs\Python\Python311\python.exe"
     if exist "!NEW_PY_PATH!" (
         set PYTHON="!NEW_PY_PATH!"
     ) else (
-        echo   [WARNING] Python was installed, but you need to restart this window to use it.
-        echo   Please close this window and double-click start.bat again.
+        echo   [WARNING] Restart this window and double-click start.bat again.
         pause
         exit /b 0
     )
 )
 
-for /f "tokens=*" %%V in ('!PYTHON! --version 2^>^&1') do echo   OK  %%V found
+for /f "tokens=*" %%V in ('!PYTHON! --version 2^>^&1') do echo   OK  %%V
 
-:: ── 2. Create virtual environment ────────────────────────
+:: ── 2. Virtual environment ──────────────────────────────
 if not exist "venv\Scripts\python.exe" (
     echo   ...  Creating virtual environment...
     !PYTHON! -m venv venv
     if !errorlevel! neq 0 (
-        echo   [ERROR] Failed to create virtual environment.
-        echo   Try running: !PYTHON! -m pip install feedparser schedule plyer
+        echo   [ERROR] Failed to create venv.
         pause
         exit /b 1
     )
-    echo   OK   Virtual environment created
+    echo   OK   Virtual environment ready
 )
 
 set VENV_PYTHON=venv\Scripts\python.exe
 set VENV_PIP=venv\Scripts\pip.exe
 
-:: ── 3. Upgrade pip ────────────────────────────────────────
 %VENV_PYTHON% -m pip install --quiet --upgrade pip >nul 2>&1
 
-:: ── 4. Install dependencies ───────────────────────────────
-echo   ...  Checking dependencies...
+:: ── 3. Dependencies ─────────────────────────────────────
+echo   ...  Checking packages...
 %VENV_PYTHON% -c "import feedparser, schedule, plyer, pystray; from PIL import Image" >nul 2>&1
 if !errorlevel! neq 0 (
-    echo   ...  Installing packages ^(first run, takes ~30 seconds^)...
+    echo   ...  Installing packages (first run ~30s)...
     %VENV_PIP% install --quiet -r requirements.txt
     if !errorlevel! neq 0 (
-        echo   [ERROR] Package installation failed.
-        echo   Check your internet connection and try again.
+        echo   [ERROR] Package install failed. Check internet and retry.
         pause
         exit /b 1
     )
-    echo   OK   All packages installed
+    echo   OK   Packages installed
 ) else (
-    echo   OK   All packages ready
+    echo   OK   Packages ready
 )
 
-:: ── 5. Run the agent ──────────────────────────────────────
+:: ── 4. Launch ───────────────────────────────────────────
 echo.
-echo   Fetching your cybersecurity digest...
-echo   Your browser will open with the report automatically.
-echo   The agent will run every 3 days in the background.
-echo   You can close this window after setup completes.
+echo   Starting CyberDigest...
+echo   Your browser will open with the digest.
+echo   Look for the tray icon in the taskbar.
+echo   You can close this window after setup if scheduling succeeded.
 echo.
 
 %VENV_PYTHON% news_agent.py
 
 echo.
-echo   Done! CyberDigest is running in the background.
-echo   Check status.txt anytime to see the last run info.
+echo   Done for this session.
+echo   Reports folder: %cd%\reports
+echo   Status file:    %cd%\status.txt
 echo.
 pause

@@ -24,6 +24,9 @@ def test_open_latest_missing(isolated_app, monkeypatch):
 
 
 def test_open_local_html_uses_xdg_or_webbrowser(isolated_app, monkeypatch, tmp_path):
+    import platform
+    import subprocess
+
     import cyberdigest.reports as reports
 
     f = tmp_path / "x.html"
@@ -40,13 +43,35 @@ def test_open_local_html_uses_xdg_or_webbrowser(isolated_app, monkeypatch, tmp_p
 
         return P()
 
-    monkeypatch.setattr(reports.platform if hasattr(reports, "platform") else __import__("platform"), "system", lambda: "Linux")
-    import platform
-    import subprocess
-
     monkeypatch.setattr(platform, "system", lambda: "Linux")
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
     ok = reports.open_local_html(f)
     assert ok is True
     assert called["xdg"] is True
+
+
+def test_open_windows_uses_cmd_start(isolated_app, monkeypatch, tmp_path):
+    import platform
+    import subprocess
+
+    import cyberdigest.reports as reports
+
+    f = tmp_path / "win.html"
+    f.write_text("<html>hi</html>", encoding="utf-8")
+    seen = {}
+
+    def fake_popen(cmd, **kwargs):
+        seen["cmd"] = cmd
+
+        class P:
+            pass
+
+        return P()
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    ok = reports.open_local_html(f)
+    assert ok is True
+    assert seen["cmd"][0] == "cmd"
+    assert "start" in seen["cmd"]

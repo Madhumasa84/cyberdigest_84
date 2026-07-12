@@ -88,16 +88,26 @@ if !errorlevel! neq 0 (
 :: ── 4. Launch ───────────────────────────────────────────
 echo.
 echo   Starting CyberDigest...
-echo   Your browser will open with the digest.
-echo   Look for the tray icon in the taskbar.
-echo   You can close this window after setup if scheduling succeeded.
+echo   1) Fetches news
+echo   2) Opens the HTML digest in your browser
+echo   3) Keeps a tray icon for later
 echo.
+echo   If the browser does not open, check the "Report ready:" path below
+echo   and double-click that .html file in the reports folder.
+echo.
+
+:: Force desktop browser behavior (never treat as headless server)
+set CYBERDIGEST_HEADLESS=0
 
 %VENV_PYTHON% news_agent.py
 
 echo.
 echo   Done for this session.
 echo   Reports folder: %cd%\reports
+if exist "reports\index.html" (
+  echo   Opening archive index...
+  start "" "%cd%\reports\index.html"
+)
 echo   Status file:    %cd%\status.txt
 echo.
 pause

@@ -214,9 +214,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  CyberDigest — Desktop Tray Mode v{__version__}")
             print("=" * 54)
             registered = register_scheduler()
-            # Tray owns the process; OS scheduler fires separate processes.
-            # In-process loop only when registration failed.
-            success = run_tray_gui(scheduler_registered=registered)
+
+            # Fetch + open browser on the *main* thread first.
+            # On Windows, opening HTML from a tray worker thread often does nothing.
+            cfg = get_config()
+            lr = get_last_run()
+            now = datetime.now()
+            interval = cfg["interval_days"]
+            due = lr is None or (now - lr) >= timedelta(days=interval) - timedelta(
+                hours=2
+            )
+            if due:
+                print("Fetching your digest (browser will open when ready)…")
+                try:
+                    run_agent(is_fallback=not registered)
+                except Exception as exc:
+                    log.error("Startup fetch failed: %s", exc, exc_info=True)
+            else:
+                print("Opening your latest digest…")
+                if not open_latest_report():
+                    print("No digest yet — fetching now…")
+                    try:
+                        run_agent(is_fallback=not registered)
+                    except Exception as exc:
+                        log.error("Startup fetch failed: %s", exc, exc_info=True)
+
+            # Tray for background use; skip duplicate startup fetch
+            success = run_tray_gui(
+                scheduler_registered=registered,
+                skip_startup_fetch=True,
+            )
             if success:
                 return 0
 

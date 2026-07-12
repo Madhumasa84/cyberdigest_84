@@ -91,6 +91,9 @@ def test_main_desktop_tray_path(isolated_app, monkeypatch):
     monkeypatch.setattr(cli, "is_headless", lambda: False)
     monkeypatch.setattr(cli, "has_gui", lambda: True)
     monkeypatch.setattr(cli, "register_scheduler", lambda: True)
+    monkeypatch.setattr(cli, "run_agent", lambda **k: True)
+    monkeypatch.setattr(cli, "open_latest_report", lambda: True)
+    monkeypatch.setattr(cli, "get_last_run", lambda: None)
     monkeypatch.setattr(cli, "run_tray_gui", lambda **k: True)
     rc = cli.main([])
     assert rc == 0

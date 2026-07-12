@@ -108,6 +108,67 @@ def latest_report_path() -> Path | None:
     )
 
 
+def _open_windows(path_str: str) -> None:
+    """
+    Open a file on Windows in a way that works from *any* thread.
+
+    os.startfile() often fails or does nothing when called from a
+    background thread (tray fetch). `cmd /c start` is reliable.
+    """
+    import os
+    import subprocess
+
+    errors: list[Exception] = []
+
+    # 1) cmd start — works from worker threads; empty title arg is required
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", path_str],
+            close_fds=True,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except Exception as exc:
+        errors.append(exc)
+
+    # 2) os.startfile (main-thread friendly)
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(path_str)  # type: ignore[attr-defined]
+            return
+    except Exception as exc:
+        errors.append(exc)
+
+    # 3) PowerShell Start-Process
+    try:
+        subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f'Start-Process -FilePath "{path_str}"',
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except Exception as exc:
+        errors.append(exc)
+
+    # 4) webbrowser last resort
+    import webbrowser
+
+    try:
+        webbrowser.open(Path(path_str).resolve().as_uri(), new=2)
+        return
+    except Exception as exc:
+        errors.append(exc)
+
+    raise RuntimeError("; ".join(str(e) for e in errors))
+
+
 def open_local_html(p: Path) -> bool:
     """
     Open a local HTML report in the default browser.
@@ -116,7 +177,6 @@ def open_local_html(p: Path) -> bool:
     then falls back to the webbrowser module. Always prints the path so the
     user can open it manually if every opener fails.
     """
-    import os
     import platform
     import subprocess
     import webbrowser
@@ -139,25 +199,23 @@ def open_local_html(p: Path) -> bool:
             return True
         except Exception as exc:
             errors.append(f"{label}: {exc}")
-            log.debug("Open via %s failed: %s", label, exc)
+            log.warning("Open via %s failed: %s", label, exc)
             return False
 
     opened = False
-    if system == "Windows" and hasattr(os, "startfile"):
-        opened = _try("startfile", lambda: os.startfile(path_str))  # type: ignore[attr-defined]
+    if system == "Windows":
+        opened = _try("windows-start", lambda: _open_windows(path_str))
     elif system == "Darwin":
         opened = _try(
             "open",
             lambda: subprocess.run(["open", path_str], check=True, timeout=15),
         )
     else:
-        # Linux / *nix — xdg-open is far more reliable than webbrowser for local files
         for cmd in (["xdg-open", path_str], ["gio", "open", path_str]):
             if opened:
                 break
 
             def _xdg(c=cmd):
-                # Don't wait forever — browser may keep process open
                 subprocess.Popen(
                     c,
                     stdout=subprocess.DEVNULL,
@@ -168,20 +226,20 @@ def open_local_html(p: Path) -> bool:
             opened = _try(cmd[0], _xdg)
 
     if not opened:
-        # webbrowser often fails for file:// on Linux, but try as last resort
         opened = _try(
             "webbrowser",
             lambda: webbrowser.open(uri, new=2) or True,
         )
 
-    # Always show the path so users can open it with one click/copy
-    print(f"\n  📄 Report ready: {path_str}")
+    # ASCII-friendly markers (Windows consoles often mishandle emoji)
+    print(f"\n  Report ready: {path_str}")
     if opened:
-        print("  (opened in your default browser)\n")
+        print("  Browser open requested (default app for .html).\n")
     else:
-        print("  Could not auto-open the browser. Open the file above manually.")
+        print("  Could not auto-open the browser. Double-click the file above.")
         if errors:
             log.warning("Browser open attempts failed: %s", "; ".join(errors))
+            print("  Errors: " + " | ".join(errors))
         print()
     return opened
 
@@ -368,7 +426,6 @@ def _prune_reports(
         all_reports: list[Path] = []
         for g in groups:
             all_reports.extend(g)
-        # Sort by mtime descending (newest first)
         all_reports.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
         for old in all_reports[max_arch:]:
             try:
@@ -400,7 +457,6 @@ def generate_index_html() -> None:
         max_arch,
         archive_global,
     )
-    # Re-scan after prune
     cyber_reports = sorted(REPORTS_DIR.glob("cybersec_report_*.html"), reverse=True)
     network_reports = sorted(REPORTS_DIR.glob("network_report_*.html"), reverse=True)
     cisco_reports = sorted(REPORTS_DIR.glob("cisco_report_*.html"), reverse=True)
@@ -485,5 +541,4 @@ def generate_index_html() -> None:
     dest = REPORTS_DIR / "index.html"
     tmp = REPORTS_DIR / "index.html.tmp"
     tmp.write_text(idx, encoding="utf-8")
-    # replace() overwrites on Windows; rename() does not
     tmp.replace(dest)

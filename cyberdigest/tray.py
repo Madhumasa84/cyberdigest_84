@@ -89,7 +89,11 @@ def _background_scheduler_only_when_needed(need_fallback: bool):
         time.sleep(60)
 
 
-def run_tray_gui(*, scheduler_registered: bool = False) -> bool:
+def run_tray_gui(
+    *,
+    scheduler_registered: bool = False,
+    skip_startup_fetch: bool = False,
+) -> bool:
     if not _HAS_GUI:
         return False
 
@@ -119,30 +123,28 @@ def run_tray_gui(*, scheduler_registered: bool = False) -> bool:
         daemon=True,
     ).start()
 
-    # Open any existing digest immediately; a fresh fetch below will open the new one
-    _gui_open_latest()
+    if not skip_startup_fetch:
+        # Caller did not pre-fetch on main thread (e.g. tests / advanced use)
+        _gui_open_latest()
+        lr = get_last_run()
+        interval = get_config()["interval_days"]
+        if lr is None or (datetime.now() - lr) >= timedelta(days=interval) - timedelta(
+            hours=2
+        ):
 
-    lr = get_last_run()
-    interval = get_config()["interval_days"]
-    if lr is None or (datetime.now() - lr) >= timedelta(days=interval) - timedelta(hours=2):
-        def _startup_fetch():
-            if not _FETCH_LOCK.acquire(blocking=False):
-                return
-            try:
-                # run_agent opens the browser when the new HTML is ready
-                run_agent(is_fallback=not scheduler_registered)
-            finally:
-                _FETCH_LOCK.release()
+            def _startup_fetch():
+                if not _FETCH_LOCK.acquire(blocking=False):
+                    return
+                try:
+                    run_agent(is_fallback=not scheduler_registered)
+                finally:
+                    _FETCH_LOCK.release()
 
-        print("[GUI] Fetching latest news — your browser will open when ready…")
-        threading.Thread(target=_startup_fetch, daemon=True).start()
-    else:
-        # Not due for a full fetch — make sure the last report is visible
-        if not open_latest_report():
-            print("[GUI] No digest yet. Use tray menu → Fetch News Now.")
+            print("[GUI] Fetching latest news — browser opens when ready…")
+            threading.Thread(target=_startup_fetch, daemon=True).start()
 
     log.info("Starting System Tray GUI...")
-    print("\n[GUI] System Tray mode active. Look for the icon in your taskbar!")
-    print("      Menu: Open Latest Digest | Fetch News Now | Quit")
+    print("\n[GUI] System Tray mode active. Look for the tray icon (taskbar).")
+    print("      Right-click: Open Latest Digest | Fetch News Now | Quit")
     icon.run()
     return True

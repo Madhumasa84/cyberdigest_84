@@ -142,16 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     _SHUTDOWN = False
     _configure_stdio()
 
-    # SIGTERM is not available on all Windows builds; ignore if missing
-    if hasattr(signal, "SIGTERM"):
+    # Signal registration can fail on Windows / non-main threads — never crash for it
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, sig_name, None)
+        if sig is None:
+            continue
         try:
-            signal.signal(signal.SIGTERM, _handle_signal)
-        except (ValueError, OSError):
+            signal.signal(sig, _handle_signal)
+        except Exception:
             pass
-    try:
-        signal.signal(signal.SIGINT, _handle_signal)
-    except (ValueError, OSError):
-        pass
 
     parser = argparse.ArgumentParser(
         description="CyberDigest — Production-grade cybersecurity news agent",

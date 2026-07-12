@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 import sqlite3
 from datetime import datetime
 
@@ -12,7 +13,12 @@ def get_db() -> sqlite3.Connection:
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_FILE, timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # WAL is great on Unix; on Windows it often leaves locked -wal/-shm files
+    # that break pytest tmp cleanup and multi-process access.
+    if platform.system() == "Windows":
+        conn.execute("PRAGMA journal_mode=DELETE")
+    else:
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 

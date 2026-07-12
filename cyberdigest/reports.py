@@ -413,6 +413,8 @@ def generate_index_html() -> None:
         "</div>"
     )
     idx = _page("CyberDigest Archive", _CSS + _IDXCSS, body)
+    dest = REPORTS_DIR / "index.html"
     tmp = REPORTS_DIR / "index.html.tmp"
     tmp.write_text(idx, encoding="utf-8")
-    tmp.rename(REPORTS_DIR / "index.html")
+    # replace() overwrites on Windows; rename() does not
+    tmp.replace(dest)

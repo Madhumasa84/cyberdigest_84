@@ -275,6 +275,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
 
 
 def _atomic_write(path: Path, content: str) -> None:
+    """Write via temp file. Use replace() so Windows can overwrite existing targets."""
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(content, encoding="utf-8")
-    tmp.rename(path)
+    tmp.replace(path)

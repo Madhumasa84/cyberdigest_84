@@ -1,0 +1,25 @@
+[Unit]
+Description=CyberDigest cybersecurity news agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/cyberdigest
+Environment=CYBERDIGEST_HEADLESS=1
+Environment=CYBERDIGEST_DATA_DIR=/var/lib/cyberdigest
+# Environment=NVD_API_KEY=
+# Environment=CYBERDIGEST_SMTP_PASSWORD=
+ExecStart=/opt/cyberdigest/venv/bin/python /opt/cyberdigest/news_agent.py --cli-only
+Restart=on-failure
+RestartSec=30
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cyberdigest /opt/cyberdigest
+
+[Install]
+WantedBy=multi-user.target

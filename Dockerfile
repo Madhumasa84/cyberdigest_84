@@ -1,17 +1,26 @@
 FROM python:3.10-slim
 
-# Set up the working directory
 WORKDIR /app
 
-# Copy dependencies first for better caching
-COPY requirements.txt .
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    CYBERDIGEST_HEADLESS=1 \
+    CYBERDIGEST_DATA_DIR=/data
 
-# Install python dependencies
+# System deps for optional tray libs are not needed in headless image
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app
-COPY . .
+COPY news_agent.py .
+COPY cyberdigest/ ./cyberdigest/
+COPY config.example.json .
+COPY feeds.yaml .
+COPY config.json .
 
-# Run the agent in the foreground, using the in-app scheduler (fallback loop)
-# The OS-level cron is not needed in Docker, we just leave it running
-CMD ["python", "news_agent.py"]
+# Runtime data lives on a volume
+RUN mkdir -p /data/reports \
+    && if [ ! -f /app/config.json ]; then cp /app/config.example.json /app/config.json; fi
+
+VOLUME ["/data"]
+
+CMD ["python", "news_agent.py", "--cli-only"]

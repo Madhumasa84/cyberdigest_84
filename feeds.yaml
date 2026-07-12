@@ -1,0 +1,83 @@
+# CyberDigest feed catalog
+# Edit this file to add/remove sources without touching Python code.
+# Format per entry: { name, url, color }
+
+cyber:
+  - name: The Hacker News
+    url: https://feeds.feedburner.com/TheHackersNews
+    color: "#e74c3c"
+  - name: SecurityWeek
+    url: https://www.securityweek.com/feed/
+    color: "#c0392b"
+  - name: BleepingComputer
+    url: https://www.bleepingcomputer.com/feed/
+    color: "#e74c3c"
+  - name: Krebs on Security
+    url: https://krebsonsecurity.com/feed/
+    color: "#2c3e50"
+  - name: Schneier on Security
+    url: https://www.schneier.com/feed/atom/
+    color: "#3498db"
+  - name: Cisco Talos
+    url: https://blog.talosintelligence.com/rss/
+    color: "#049fd4"
+  - name: Cisco Security
+    url: https://feedpress.me/ciscosecurity
+    color: "#049fd4"
+  - name: Palo Alto Unit 42
+    url: https://feeds.feedburner.com/Unit42
+    color: "#fa4616"
+  - name: Sophos Threat Research
+    url: https://news.sophos.com/en-us/category/threat-research/feed/
+    color: "#9b59b6"
+  - name: CISA Advisories
+    url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    color: "#27ae60"
+  - name: Fortinet Blog
+    url: https://feeds.feedburner.com/fortinetblog
+    color: "#ee3124"
+  - name: Microsoft Security
+    url: https://www.microsoft.com/security/blog/feed/
+    color: "#0078d4"
+  - name: Google Online Security Blog
+    url: https://security.googleblog.com/feeds/posts/default?alt=rss
+    color: "#4285f4"
+  - name: WeLiveSecurity (ESET)
+    url: https://feeds.feedburner.com/eset/blog
+    color: "#16a085"
+  - name: Graham Cluley
+    url: https://grahamcluley.com/feed/
+    color: "#e67e22"
+  - name: Cloudflare Security
+    url: https://blog.cloudflare.com/tag/security/rss
+    color: "#f38020"
+  - name: Dark Reading
+    url: https://www.darkreading.com/rss.xml
+    color: "#8b0000"
+
+network:
+  - name: Network World
+    url: https://www.networkworld.com/feed/
+    color: "#0ea5e9"
+  - name: Packet Pushers
+    url: https://feeds.packetpushers.net/packetpushersfullfeed/
+    color: "#6366f1"
+  - name: Cisco Blogs
+    url: https://blogs.cisco.com/developer/feed
+    color: "#049fd4"
+  - name: AWS Networking
+    url: https://aws.amazon.com/blogs/networking-and-content-delivery/feed/
+    color: "#ff9900"
+  - name: The New Stack
+    url: https://thenewstack.io/feed/
+    color: "#0077c8"
+
+cisco:
+  - name: Cisco PSIRT
+    url: https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml
+    color: "#049fd4"
+
+fortinet:
+  - name: Fortinet PSIRT
+    url: https://www.fortiguard.com/rss/ir.xml
+    color: "#ee3124"

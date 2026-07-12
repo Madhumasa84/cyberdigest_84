@@ -1,15 +1,25 @@
-version: '3.8'
+version: "3.8"
 
 services:
   cyberdigest:
     build: .
     container_name: cyberdigest
     restart: unless-stopped
+    environment:
+      CYBERDIGEST_HEADLESS: "1"
+      CYBERDIGEST_DATA_DIR: /data
+      # Optional secrets (prefer env over committing passwords):
+      # NVD_API_KEY: ""
+      # CYBERDIGEST_SMTP_PASSWORD: ""
+      # CYBERDIGEST_EMAIL_ENABLED: "false"
     volumes:
-      # Persist configuration and data
-      - ./config.json:/app/config.json
-      - ./state.db:/app/state.db
-      - ./reports:/app/reports
-      - ./agent_log.txt:/app/agent_log.txt
-      - ./status.txt:/app/status.txt
-      - ./heartbeat.txt:/app/heartbeat.txt
+      # Single data directory avoids Docker creating dirs for missing files
+      - cyberdigest-data:/data
+      # Optional: mount host config (read-only) without secrets
+      - ./config.json:/app/config.json:ro
+      - ./feeds.yaml:/app/feeds.yaml:ro
+      # Optional: publish reports to host for browsing
+      - ./reports:/data/reports
+
+volumes:
+  cyberdigest-data:

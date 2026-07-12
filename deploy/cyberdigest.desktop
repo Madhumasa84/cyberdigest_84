@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=CyberDigest
+Comment=Cybersecurity news digests — one click
+Exec=bash -c 'cd "%k" && bash start.sh'
+Path=
+Icon=security-high
+Terminal=true
+Categories=Network;Security;
+StartupNotify=true

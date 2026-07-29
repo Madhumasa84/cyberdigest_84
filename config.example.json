@@ -47,5 +47,6 @@
     "nvd_max_lookups": 15,
     "nvd_timeout_seconds": 25,
     "nvd_sleep_no_key": 0.6,
-    "nvd_sleep_with_key": 0.2
+    "nvd_sleep_with_key": 0.2,
+    "_comment": "Copy to config.local.json for secrets, or set env vars: CYBERDIGEST_SMTP_PASSWORD, NVD_API_KEY"
 }

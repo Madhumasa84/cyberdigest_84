@@ -21,11 +21,11 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip build twine
-          pip install -r requirements-dev.txt
+          pip install -e .[dev]
 
       - name: Verify
         run: |
-          ruff check cyberdigest tests news_agent.py
+          ruff check src/cyberdigest tests news_agent.py
           pytest -q --cov=cyberdigest --cov-fail-under=80
           pip install pip-audit
           pip-audit -r requirements.txt

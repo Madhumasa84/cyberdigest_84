@@ -27,8 +27,7 @@ install: $(VENV)/bin/python
 	$(PIP) install -r requirements.txt
 
 install-dev: $(VENV)/bin/python
-	$(PIP) install -r requirements-dev.txt
-	$(PIP) install ruff pytest-cov
+	$(PIP) install -e .[dev]
 
 test: $(VENV)/bin/python
 	$(PYTEST) -q
@@ -37,21 +36,21 @@ test-cov: $(VENV)/bin/python
 	$(PYTEST) -q --cov=cyberdigest --cov-report=term-missing --cov-fail-under=80
 
 lint: $(VENV)/bin/python
-	$(RUFF) check cyberdigest tests news_agent.py
+	$(RUFF) check src/cyberdigest tests news_agent.py
 
 security: $(VENV)/bin/python
 	$(PIP) install -q pip-audit
 	$(VENV)/bin/pip-audit -r requirements.txt
 
 format: $(VENV)/bin/python
-	$(RUFF) check --fix cyberdigest tests news_agent.py || true
-	$(RUFF) format cyberdigest tests news_agent.py || true
+	$(RUFF) check --fix src/cyberdigest tests news_agent.py || true
+	$(RUFF) format src/cyberdigest tests news_agent.py || true
 
 smoke: $(VENV)/bin/python
 	$(PY) news_agent.py --version
 	$(PY) news_agent.py --help >/dev/null
 	$(PY) -m cyberdigest --version
-	$(PY) -m compileall -q cyberdigest news_agent.py
+	$(PY) -m compileall -q src/cyberdigest news_agent.py
 
 health: $(VENV)/bin/python
 	$(PY) news_agent.py --healthcheck || true

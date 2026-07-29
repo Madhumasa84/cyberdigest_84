@@ -21,15 +21,14 @@ fi
 # shellcheck disable=SC1091
 source venv/bin/activate
 pip install -q --upgrade pip
-pip install -q -r requirements-dev.txt
-pip install -q ruff pytest-cov
+pip install -q -e .[dev]
 
 info "1/6 Compile"
-python -m compileall -q cyberdigest news_agent.py
+python -m compileall -q src/cyberdigest news_agent.py
 pass "compileall"
 
 info "2/6 Lint (ruff)"
-if ruff check cyberdigest tests news_agent.py; then
+if ruff check src/cyberdigest tests news_agent.py; then
   pass "ruff"
 else
   fail "ruff found issues"

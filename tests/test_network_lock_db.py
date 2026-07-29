@@ -15,6 +15,21 @@ def test_is_headless_env(monkeypatch):
     monkeypatch.setattr(net.platform, "system", lambda: "Linux")
     assert net.is_headless() is False
 
+    monkeypatch.setenv("CYBERDIGEST_HEADLESS", "")
+    monkeypatch.setattr(net.platform, "system", lambda: "Windows")
+    assert net.is_headless() is False
+
+    monkeypatch.setattr(net.platform, "system", lambda: "Darwin")
+    assert net.is_headless() is False
+
+    monkeypatch.setattr(net.platform, "system", lambda: "Linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    assert net.is_headless() is False
+
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert net.is_headless() is True
+
 
 def test_check_internet_mocked(monkeypatch):
     monkeypatch.setattr(net.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))

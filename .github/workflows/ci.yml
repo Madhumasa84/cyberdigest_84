@@ -11,7 +11,6 @@ env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: utf-8
   CYBERDIGEST_HEADLESS: "1"
-  PYTHONPATH: src
 
 jobs:
   test:
@@ -35,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -e .[dev]
 
       - name: Lint (ruff) — Ubuntu only
         if: runner.os == 'Linux'

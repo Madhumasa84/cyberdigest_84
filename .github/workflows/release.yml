@@ -21,7 +21,7 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip build twine
-          pip install -r requirements-dev.txt
+          pip install -e .[dev]
 
       - name: Verify
         run: |

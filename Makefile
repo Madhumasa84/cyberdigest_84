@@ -27,8 +27,7 @@ install: $(VENV)/bin/python
 	$(PIP) install -r requirements.txt
 
 install-dev: $(VENV)/bin/python
-	$(PIP) install -r requirements-dev.txt
-	$(PIP) install ruff pytest-cov
+	$(PIP) install -e .[dev]
 
 test: $(VENV)/bin/python
 	$(PYTEST) -q

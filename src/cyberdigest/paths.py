@@ -7,8 +7,8 @@ from pathlib import Path
 
 # Package root (cyberdigest/) and project root (repo / install dir)
 PACKAGE_DIR = Path(__file__).resolve().parent
-# Prefer project root (parent of package) so state lives next to news_agent.py
-PROJECT_ROOT = PACKAGE_DIR.parent
+# Prefer project root (parent of package/parent of src) so state lives next to news_agent.py
+PROJECT_ROOT = PACKAGE_DIR.parent.parent
 
 # Allow Docker / advanced users to relocate all runtime data
 _DATA_OVERRIDE = os.environ.get("CYBERDIGEST_DATA_DIR", "").strip()

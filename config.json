@@ -12,14 +12,40 @@
         "actively exploited",
         "rce",
         "ransomware",
-        "breach"
+        "breach",
+        "critical vulnerability",
+        "outage",
+        "bgp hijack",
+        "backbone failure",
+        "ddos"
     ],
     "high_keywords": [
         "vulnerability",
         "flaw",
-        "patch"
+        "patch",
+        "exploit",
+        "malware",
+        "deprecat",
+        "end-of-life",
+        "eol",
+        "misconfiguration",
+        "sd-wan",
+        "firmware update",
+        "security advisory"
     ],
+    "email": {
+        "enabled": false,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "username": "",
+        "password": "",
+        "from_addr": "",
+        "to_addrs": []
+    },
+    "nvd_api_key": "",
     "nvd_enabled": true,
     "nvd_max_lookups": 15,
-    "nvd_timeout_seconds": 25
+    "nvd_timeout_seconds": 25,
+    "nvd_sleep_no_key": 0.6,
+    "nvd_sleep_with_key": 0.2
 }

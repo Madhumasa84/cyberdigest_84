@@ -38,7 +38,7 @@ jobs:
 
       - name: Lint (ruff) — Ubuntu only
         if: runner.os == 'Linux'
-        run: ruff check cyberdigest tests news_agent.py
+        run: ruff check src/cyberdigest tests news_agent.py
 
       # Full coverage gate only on Linux (platform-specific branches differ by OS)
       - name: Unit + integration tests (with coverage gate)
@@ -50,7 +50,7 @@ jobs:
         run: pytest -q --tb=short
 
       - name: Compile package
-        run: python -m compileall -q cyberdigest news_agent.py
+        run: python -m compileall -q src/cyberdigest news_agent.py
 
       - name: CLI smoke
         shell: bash

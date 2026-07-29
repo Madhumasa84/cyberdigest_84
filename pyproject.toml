@@ -29,6 +29,7 @@ dev = [
 cyberdigest = "cyberdigest.cli:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["cyberdigest*"]
 
 [tool.setuptools.package-data]
@@ -36,16 +37,16 @@ cyberdigest = ["assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src"]
 addopts = "-q"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["cyberdigest"]
+source = ["src/cyberdigest"]
 branch = true
 omit = [
-    "cyberdigest/tray.py",
-    "cyberdigest/__main__.py",
+    "src/cyberdigest/tray.py",
+    "src/cyberdigest/__main__.py",
 ]
 
 [tool.coverage.report]
@@ -60,7 +61,7 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py38"
 line-length = 100
-src = ["cyberdigest", "tests"]
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]

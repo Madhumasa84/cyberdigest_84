@@ -25,7 +25,7 @@ jobs:
 
       - name: Verify
         run: |
-          ruff check cyberdigest tests news_agent.py
+          ruff check src/cyberdigest tests news_agent.py
           pytest -q --cov=cyberdigest --cov-fail-under=80
           pip install pip-audit
           pip-audit -r requirements.txt

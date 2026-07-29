@@ -15,7 +15,7 @@ dependencies = [
     "schedule==1.2.2",
     "plyer==2.1.0",
     "pystray==0.19.5",
-    "Pillow==12.2.0",
+    "Pillow==12.3.0",
 ]
 
 [project.optional-dependencies]

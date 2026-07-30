@@ -1,3 +1,5 @@
+import pytest
+
 from cyberdigest.textutil import extract_cve_ids, h, safe_http_url, strip_html, truncate
 
 
@@ -33,11 +35,27 @@ def test_extract_cve_ids():
     assert extract_cve_ids("") == []
 
 
-def test_reading_time():
+@pytest.mark.parametrize(
+    "word_count, expected",
+    [
+        (0, "1 min read"),
+        (1, "1 min read"),
+        (100, "1 min read"),
+        (200, "1 min read"),
+        (299, "1 min read"),
+        (300, "2 min read"),
+        (301, "2 min read"),
+        (400, "2 min read"),
+        (499, "2 min read"),
+        (500, "2 min read"),
+        (501, "3 min read"),
+        (1000, "5 min read"),
+    ],
+)
+def test_reading_time(word_count, expected):
     from cyberdigest.textutil import reading_time
-    assert reading_time("word") == "1 min read"
-    assert reading_time("word " * 200) == "1 min read"
-    assert reading_time("word " * 300) == "2 min read"
+    text = "word " * word_count
+    assert reading_time(text) == expected
 
 
 def test_truncate():

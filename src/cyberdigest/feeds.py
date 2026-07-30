@@ -67,7 +67,6 @@ DEFAULT_FORTINET_PSIRT_FEEDS: list[tuple[str, str, str]] = [
     ("Fortinet PSIRT", "https://www.fortiguard.com/rss/ir.xml", "#ee3124"),
 ]
 
-
 def _load_feeds_document(text: str) -> dict[str, Any]:
     """Load feeds.yaml as JSON or simple YAML (no PyYAML required)."""
     text = text.strip()
@@ -87,7 +86,6 @@ def _load_feeds_document(text: str) -> dict[str, Any]:
     except Exception:
         pass
     return _parse_simple_feeds_yaml(text)
-
 
 def _parse_simple_feeds_yaml(text: str) -> dict[str, Any]:
     """
@@ -132,7 +130,6 @@ def _parse_simple_feeds_yaml(text: str) -> dict[str, Any]:
         data.setdefault(section, []).append(current)
     return data
 
-
 def _parse_feed_list(raw: list | None, default: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
     # None → defaults; explicit empty list → no feeds for that category
     if raw is None:
@@ -156,7 +153,6 @@ def _parse_feed_list(raw: list | None, default: list[tuple[str, str, str]]) -> l
                 )
             )
     return out if out else list(default)
-
 
 def load_feeds() -> dict[str, list[tuple[str, str, str]]]:
     """Load feeds from feeds.yaml if present, else defaults."""
@@ -186,30 +182,25 @@ def load_feeds() -> dict[str, list[tuple[str, str, str]]]:
         "fortinet": fortinet,
     }
 
-
 def all_feeds() -> list[tuple[str, str, str]]:
     f = load_feeds()
     return f["cyber"] + f["network"] + f["cisco"] + f["fortinet"]
-
 
 @dataclass
 class _ParsedFeed:
     entries: list[dict]
     bozo: bool = False
 
-
 def _download_feed(url: str) -> bytes:
     req = urllib.request.Request(url, headers=FEED_HEADERS)
     with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
         return resp.read()
-
 
 def _xml_text(node: ET.Element, tag: str) -> str:
     found = node.find(tag)
     if found is None:
         return ""
     return "".join(found.itertext()).strip()
-
 
 def _regex_tag_text(block: str, tag: str) -> str:
     match = re.search(
@@ -219,7 +210,6 @@ def _regex_tag_text(block: str, tag: str) -> str:
         return ""
     text = re.sub(r"^\s*<!\[CDATA\[|\]\]>\s*$", "", match.group(1).strip())
     return strip_html(text)
-
 
 def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
     text = raw.decode("utf-8", "replace")
@@ -248,7 +238,6 @@ def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
                     {"title": title, "link": link, "summary": summary, "published": pub}
                 )
     return _ParsedFeed(entries)
-
 
 def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
     data = json.loads(raw.decode("utf-8", "replace"))
@@ -291,8 +280,8 @@ def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
         entries.append(item)
     return _ParsedFeed(entries)
 
-
 def _fetch_attempt(name: str, url: str) -> Any:
+
     raw: bytes | None = None
     try:
         raw = _download_feed(url)
@@ -332,20 +321,20 @@ def _fetch_attempt(name: str, url: str) -> Any:
             return fallback
     return p
 
-
 def _fetch_with_retry(name: str, url: str) -> Any:
     delays = [2, 5, 10]
     last_exc: Exception | None = None
     for attempt, delay in enumerate(delays, 1):
         try:
+
             return _fetch_attempt(name, url)
+
         except Exception as exc:
             last_exc = exc
             log.debug("Feed %s attempt %d/%d failed: %s", name, attempt, len(delays), exc)
             if attempt < len(delays):
                 time.sleep(delay)
     raise last_exc or RuntimeError("Feed fetch failed")
-
 
 def fetch_feed(
     name: str,

@@ -25,3 +25,22 @@ def test_load_default_or_project_feeds():
     assert len(feeds["cyber"]) >= 5
     assert len(feeds["network"]) >= 1
     assert all(len(t) == 3 for t in feeds["cyber"])
+
+
+def test_load_feeds_read_error(monkeypatch, caplog):
+    import logging
+    from unittest.mock import MagicMock
+
+    mock_file = MagicMock()
+    mock_file.exists.return_value = True
+    mock_file.read_text.side_effect = PermissionError("Permission denied")
+
+    monkeypatch.setattr("cyberdigest.feeds.FEEDS_FILE", mock_file)
+
+    with caplog.at_level(logging.WARNING):
+        feeds = load_feeds()
+
+    assert "Could not load feeds.yaml" in caplog.text
+    assert len(feeds["cyber"]) >= 5
+    assert len(feeds["network"]) >= 1
+    assert all(len(t) == 3 for t in feeds["cyber"])

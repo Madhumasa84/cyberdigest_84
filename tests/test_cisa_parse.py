@@ -24,3 +24,25 @@ def test_parse_cisa_kev():
     assert "CVE-2024-9999" in e["title"]
     assert e["link"].startswith("https://")
     assert "Vendor" in e["summary"]
+
+
+def test_parse_cisa_kev_invalid_date():
+    payload = {
+        "vulnerabilities": [
+            {
+                "cveID": "CVE-2024-9999",
+                "vulnerabilityName": "Test Vuln",
+                "vendorProject": "Vendor",
+                "product": "Product",
+                "dateAdded": "invalid-date",
+                "shortDescription": "A test issue",
+                "dueDate": "2024-02-01",
+                "notes": "See https://example.com/advisory for details",
+            }
+        ]
+    }
+    parsed = _parse_cisa_kev_json(json.dumps(payload).encode())
+    assert len(parsed.entries) == 1
+    e = parsed.entries[0]
+    assert "published_parsed" not in e
+    assert e["published"] == "invalid-date"

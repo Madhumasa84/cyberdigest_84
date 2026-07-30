@@ -292,49 +292,53 @@ def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
     return _ParsedFeed(entries)
 
 
+def _fetch_once(name: str, url: str) -> Any:
+    raw: bytes | None = None
+    try:
+        raw = _download_feed(url)
+        is_json_feed = (
+            url.lower().endswith(".json")
+            or "known_exploited_vulnerabilities" in url
+        )
+        if is_json_feed:
+            parsed_json = _parse_cisa_kev_json(raw)
+            if parsed_json.entries:
+                return parsed_json
+        p = feedparser.parse(raw)
+    except Exception as download_exc:
+        log.debug("Direct feed download failed for %s: %s", name, download_exc)
+        p = feedparser.parse(url, agent=USER_AGENT)
+    if not getattr(p, "entries", None):
+        if raw:
+            fallback = _parse_rss_fallback(raw)
+            if fallback.entries:
+                log.info(
+                    "Recovered %d entries from malformed feed: %s",
+                    len(fallback.entries),
+                    name,
+                )
+                return fallback
+        if getattr(p, "bozo", False):
+            raise ValueError(f"Feed parse error: {getattr(p, 'bozo_exception', 'unknown')}")
+        return []
+    if getattr(p, "bozo", False) and raw:
+        fallback = _parse_rss_fallback(raw)
+        if len(fallback.entries) > len(p.entries):
+            log.info(
+                "Recovered %d entries from malformed feed: %s",
+                len(fallback.entries),
+                name,
+            )
+            return fallback
+    return p
+
+
 def _fetch_with_retry(name: str, url: str) -> Any:
     delays = [2, 5, 10]
     last_exc: Exception | None = None
     for attempt, delay in enumerate(delays, 1):
         try:
-            raw: bytes | None = None
-            try:
-                raw = _download_feed(url)
-                is_json_feed = (
-                    url.lower().endswith(".json")
-                    or "known_exploited_vulnerabilities" in url
-                )
-                if is_json_feed:
-                    parsed_json = _parse_cisa_kev_json(raw)
-                    if parsed_json.entries:
-                        return parsed_json
-                p = feedparser.parse(raw)
-            except Exception as download_exc:
-                log.debug("Direct feed download failed for %s: %s", name, download_exc)
-                p = feedparser.parse(url, agent=USER_AGENT)
-            if not getattr(p, "entries", None):
-                if raw:
-                    fallback = _parse_rss_fallback(raw)
-                    if fallback.entries:
-                        log.info(
-                            "Recovered %d entries from malformed feed: %s",
-                            len(fallback.entries),
-                            name,
-                        )
-                        return fallback
-                if getattr(p, "bozo", False):
-                    raise ValueError(f"Feed parse error: {getattr(p, 'bozo_exception', 'unknown')}")
-                return []
-            if getattr(p, "bozo", False) and raw:
-                fallback = _parse_rss_fallback(raw)
-                if len(fallback.entries) > len(p.entries):
-                    log.info(
-                        "Recovered %d entries from malformed feed: %s",
-                        len(fallback.entries),
-                        name,
-                    )
-                    return fallback
-            return p
+            return _fetch_once(name, url)
         except Exception as exc:
             last_exc = exc
             log.debug("Feed %s attempt %d/%d failed: %s", name, attempt, len(delays), exc)

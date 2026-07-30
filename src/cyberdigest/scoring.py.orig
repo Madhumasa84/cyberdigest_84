@@ -18,8 +18,6 @@ _SHORT_HIGH = re.compile(
     re.IGNORECASE,
 )
 
-_NON_ALPHANUM = re.compile(r"[^a-z0-9]")
-
 
 def _keyword_hit(text: str, keywords: list[str], short_re: re.Pattern | None) -> bool:
     for kw in keywords:
@@ -86,7 +84,7 @@ def cluster(arts: list[dict], threshold: float = 0.75) -> list[dict]:
     out: list[dict] = []
     norms: list[str] = []
     for a in arts:
-        norm = _NON_ALPHANUM.sub("", a["title"].lower())
+        norm = re.sub(r"[^a-z0-9]", "", a["title"].lower())
         found = False
         for i, bnorm in enumerate(norms):
             if SequenceMatcher(None, norm, bnorm).ratio() > threshold:

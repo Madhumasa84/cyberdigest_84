@@ -1,0 +1,20 @@
+--- src/cyberdigest/scoring.py
++++ src/cyberdigest/scoring.py
+@@ -17,6 +17,8 @@
+     re.IGNORECASE,
+ )
+
++_NON_ALPHANUM = re.compile(r"[^a-z0-9]")
++
+
+ def _keyword_hit(text: str, keywords: list[str], short_re: re.Pattern | None) -> bool:
+     for kw in keywords:
+@@ -74,7 +76,7 @@
+     out: list[dict] = []
+     norms: list[str] = []
+     for a in arts:
+-        norm = re.sub(r"[^a-z0-9]", "", a["title"].lower())
++        norm = _NON_ALPHANUM.sub("", a["title"].lower())
+         found = False
+         for i, bnorm in enumerate(norms):
+             if SequenceMatcher(None, norm, bnorm).ratio() > threshold:

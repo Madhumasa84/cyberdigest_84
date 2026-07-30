@@ -75,3 +75,29 @@ def test_open_windows_uses_cmd_start(isolated_app, monkeypatch, tmp_path):
     assert ok is True
     assert seen["cmd"][0] == "cmd"
     assert "start" in seen["cmd"]
+
+def test_open_windows_fallback_to_startfile(isolated_app, monkeypatch, tmp_path):
+    import os
+    import platform
+    import subprocess
+
+    import cyberdigest.reports as reports
+
+    f = tmp_path / "win2.html"
+    f.write_text("<html>hi</html>", encoding="utf-8")
+
+    seen = {}
+
+    def fake_popen(cmd, **kwargs):
+        raise OSError("cmd start failed")
+
+    def fake_startfile(filepath):
+        seen["startfile"] = filepath
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(os, "startfile", fake_startfile, raising=False)
+
+    ok = reports.open_local_html(f)
+    assert ok is True
+    assert seen.get("startfile") == str(f)

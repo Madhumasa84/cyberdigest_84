@@ -20,6 +20,84 @@ def _script_path() -> str:
     return str(Path(__file__).resolve().parent / "__main__.py")
 
 
+def _register_windows(script_path: str, py_exec: str, interval: int) -> bool:
+    res = subprocess.run(
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            "CyberDigest",
+            "/TR",
+            f'"{py_exec}" "{script_path}"',
+            "/SC",
+            "DAILY",
+            "/MO",
+            str(interval),
+            "/F",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        log.error(
+            "schtasks failed (%s): stdout=%s stderr=%s",
+            res.returncode,
+            res.stdout.strip(),
+            res.stderr.strip(),
+        )
+        return False
+    return True
+
+
+def _register_macos(script_path: str, py_exec: str, interval: int) -> bool:
+    plist = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
+        ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0"><dict>\n'
+        "  <key>Label</key><string>com.cyberdigest</string>\n"
+        "  <key>ProgramArguments</key><array>\n"
+        f"    <string>{py_exec}</string>\n"
+        f"    <string>{script_path}</string>\n"
+        "  </array>\n"
+        f"  <key>StartInterval</key><integer>{interval * 86400}</integer>\n"
+        "  <key>RunAtLoad</key><true/>\n"
+        "  <key>WorkingDirectory</key>\n"
+        f"  <string>{Path(script_path).parent}</string>\n"
+        "</dict></plist>\n"
+    )
+    pd = Path.home() / "Library" / "LaunchAgents"
+    pd.mkdir(parents=True, exist_ok=True)
+    pp = pd / "com.cyberdigest.plist"
+    pp.write_text(plist)
+    subprocess.run(["launchctl", "unload", str(pp)], capture_output=True)
+    subprocess.run(["launchctl", "load", str(pp)], check=True, capture_output=True)
+    return True
+
+
+def _register_linux(script_path: str, py_exec: str, interval: int) -> bool:
+    try:
+        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+    except Exception:
+        cur = ""
+    lines = [
+        line
+        for line in cur.splitlines()
+        if "news_agent.py" not in line and "cyberdigest" not in line.lower()
+    ]
+    workdir = str(Path(script_path).parent)
+    lines.append(
+        f"0 10 */{interval} * * cd {workdir} && {py_exec} {script_path} --cli-only"
+    )
+    subprocess.run(
+        ["crontab", "-"],
+        input="\n".join(lines) + "\n",
+        text=True,
+        check=True,
+    )
+    return True
+
+
 def register_scheduler() -> bool:
     os_name = platform.system()
     script_path = _script_path()
@@ -27,78 +105,12 @@ def register_scheduler() -> bool:
     interval = get_config()["interval_days"]
     try:
         if os_name == "Windows":
-            res = subprocess.run(
-                [
-                    "schtasks",
-                    "/Create",
-                    "/TN",
-                    "CyberDigest",
-                    "/TR",
-                    f'"{py_exec}" "{script_path}"',
-                    "/SC",
-                    "DAILY",
-                    "/MO",
-                    str(interval),
-                    "/F",
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if res.returncode != 0:
-                log.error(
-                    "schtasks failed (%s): stdout=%s stderr=%s",
-                    res.returncode,
-                    res.stdout.strip(),
-                    res.stderr.strip(),
-                )
+            if not _register_windows(script_path, py_exec, interval):
                 return False
         elif os_name == "Darwin":
-            plist = (
-                '<?xml version="1.0" encoding="UTF-8"?>\n'
-                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
-                ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-                "<plist version=\"1.0\"><dict>\n"
-                "  <key>Label</key><string>com.cyberdigest</string>\n"
-                "  <key>ProgramArguments</key><array>\n"
-                f"    <string>{py_exec}</string>\n"
-                f"    <string>{script_path}</string>\n"
-                "  </array>\n"
-                f"  <key>StartInterval</key><integer>{interval * 86400}</integer>\n"
-                "  <key>RunAtLoad</key><true/>\n"
-                "  <key>WorkingDirectory</key>\n"
-                f"  <string>{Path(script_path).parent}</string>\n"
-                "</dict></plist>\n"
-            )
-            pd = Path.home() / "Library" / "LaunchAgents"
-            pd.mkdir(parents=True, exist_ok=True)
-            pp = pd / "com.cyberdigest.plist"
-            pp.write_text(plist)
-            subprocess.run(["launchctl", "unload", str(pp)], capture_output=True)
-            subprocess.run(
-                ["launchctl", "load", str(pp)], check=True, capture_output=True
-            )
+            _register_macos(script_path, py_exec, interval)
         elif os_name == "Linux":
-            try:
-                cur = subprocess.run(
-                    ["crontab", "-l"], capture_output=True, text=True
-                ).stdout
-            except Exception:
-                cur = ""
-            lines = [
-                line
-                for line in cur.splitlines()
-                if "news_agent.py" not in line and "cyberdigest" not in line.lower()
-            ]
-            workdir = str(Path(script_path).parent)
-            lines.append(
-                f"0 10 */{interval} * * cd {workdir} && {py_exec} {script_path} --cli-only"
-            )
-            subprocess.run(
-                ["crontab", "-"],
-                input="\n".join(lines) + "\n",
-                text=True,
-                check=True,
-            )
+            _register_linux(script_path, py_exec, interval)
         else:
             return False
         return verify_scheduler()

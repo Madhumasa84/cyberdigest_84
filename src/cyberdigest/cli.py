@@ -137,6 +137,114 @@ def _configure_stdio() -> None:
                 pass
 
 
+
+def _run_gui_mode(cfg: dict) -> bool:
+    print("=" * 54)
+    print(f"  CyberDigest — Desktop Tray Mode v{__version__}")
+    print("=" * 54)
+    registered = register_scheduler()
+
+    # Fetch + open browser on the *main* thread first.
+    # On Windows, opening HTML from a tray worker thread often does nothing.
+    lr = get_last_run()
+    now = datetime.now()
+    interval = cfg["interval_days"]
+    due = lr is None or (now - lr) >= timedelta(days=interval) - timedelta(
+        hours=2
+    )
+    if due:
+        print("Fetching your digest (browser will open when ready)…")
+        try:
+            run_agent(is_fallback=not registered)
+        except Exception as exc:
+            log.error("Startup fetch failed: %s", exc, exc_info=True)
+    else:
+        print("Opening your latest digest…")
+        if not open_latest_report():
+            print("No digest yet — fetching now…")
+            try:
+                run_agent(is_fallback=not registered)
+            except Exception as exc:
+                log.error("Startup fetch failed: %s", exc, exc_info=True)
+
+    # Tray for background use; skip duplicate startup fetch
+    success = run_tray_gui(
+        scheduler_registered=registered,
+        skip_startup_fetch=True,
+    )
+    return success
+
+
+def _run_cli_mode(cfg: dict, headless: bool, args: argparse.Namespace) -> None:
+    print("=" * 54)
+    print(f"  CyberDigest — CLI / Server Mode v{__version__}")
+    print("=" * 54)
+    print()
+
+    registered = False
+    if not headless:
+        registered = register_scheduler()
+    else:
+        # Docker/server: skip OS cron; use in-process loop or external orchestrator
+        log.info("Headless mode — skipping OS scheduler registration.")
+        print("Headless/server mode — using in-process scheduler.")
+
+    lr = get_last_run()
+    now = datetime.now()
+    interval = cfg["interval_days"]
+
+    if lr is None:
+        should_run = True
+        print("First run detected — fetching digest now.")
+    elif (now - lr) >= timedelta(days=interval) - timedelta(hours=2):
+        should_run = True
+        print(f"Due for a new digest (last run: {lr.strftime('%Y-%m-%d %H:%M')}).")
+    else:
+        should_run = False
+        next_run = lr + timedelta(days=interval)
+        print(f"Already ran recently ({lr.strftime('%Y-%m-%d %H:%M')}).")
+        print(f"Next scheduled run: {next_run.strftime('%Y-%m-%d %H:%M')}.")
+        if not headless and open_latest_report():
+            print("Opened the latest digest in your browser.")
+
+    if should_run:
+        retries = 0
+        while not check_internet():
+            retries += 1
+            wait = min(30 * retries, 120)
+            log.warning("No internet — waiting %d min (attempt %d)", wait, retries)
+            print(f"No internet connection. Retrying in {wait} minutes…")
+            time.sleep(wait * 60)
+        try:
+            run_agent(is_fallback=not registered and not headless)
+        except Exception as exc:
+            log.error("Unhandled run error: %s", exc, exc_info=True)
+
+    # Single owner: in-process loop only when OS scheduler missing OR forced CLI
+    # --once always exits after the (optional) run above.
+    need_loop = (headless or not registered or args.cli_only) and not args.once
+    if need_loop:
+        log.warning("Running in-process fallback loop.")
+        print("\nRunning in background loop — leave window open (or use Docker/systemd).")
+        print("Tip: use --once for a single run that exits immediately.")
+        schedule.every(interval).days.do(lambda: run_agent(is_fallback=True))
+        try:
+            while not _SHUTDOWN:
+                schedule.run_pending()
+                time.sleep(60)
+        except KeyboardInterrupt:
+            print("\nStopped.")
+    else:
+        print()
+        if registered and not args.once:
+            print("✔  Done! CyberDigest is scheduled via OS.")
+            print("   Check status.txt or run --healthcheck to verify.")
+        elif args.once:
+            print("✔  One-shot run finished (--once).")
+        else:
+            print("✔  Done! CyberDigest is scheduled via OS.")
+            print("   Check status.txt or run --healthcheck to verify.")
+
 def main(argv: list[str] | None = None) -> int:
     global _SHUTDOWN
     _SHUTDOWN = False
@@ -210,111 +318,10 @@ def main(argv: list[str] | None = None) -> int:
 
         headless = is_headless()
         if not headless and not args.cli_only and has_gui():
-            print("=" * 54)
-            print(f"  CyberDigest — Desktop Tray Mode v{__version__}")
-            print("=" * 54)
-            registered = register_scheduler()
-
-            # Fetch + open browser on the *main* thread first.
-            # On Windows, opening HTML from a tray worker thread often does nothing.
-            cfg = get_config()
-            lr = get_last_run()
-            now = datetime.now()
-            interval = cfg["interval_days"]
-            due = lr is None or (now - lr) >= timedelta(days=interval) - timedelta(
-                hours=2
-            )
-            if due:
-                print("Fetching your digest (browser will open when ready)…")
-                try:
-                    run_agent(is_fallback=not registered)
-                except Exception as exc:
-                    log.error("Startup fetch failed: %s", exc, exc_info=True)
-            else:
-                print("Opening your latest digest…")
-                if not open_latest_report():
-                    print("No digest yet — fetching now…")
-                    try:
-                        run_agent(is_fallback=not registered)
-                    except Exception as exc:
-                        log.error("Startup fetch failed: %s", exc, exc_info=True)
-
-            # Tray for background use; skip duplicate startup fetch
-            success = run_tray_gui(
-                scheduler_registered=registered,
-                skip_startup_fetch=True,
-            )
-            if success:
+            if _run_gui_mode(cfg):
                 return 0
 
-        print("=" * 54)
-        print(f"  CyberDigest — CLI / Server Mode v{__version__}")
-        print("=" * 54)
-        print()
-
-        registered = False
-        if not headless:
-            registered = register_scheduler()
-        else:
-            # Docker/server: skip OS cron; use in-process loop or external orchestrator
-            log.info("Headless mode — skipping OS scheduler registration.")
-            print("Headless/server mode — using in-process scheduler.")
-
-        lr = get_last_run()
-        now = datetime.now()
-        interval = cfg["interval_days"]
-
-        if lr is None:
-            should_run = True
-            print("First run detected — fetching digest now.")
-        elif (now - lr) >= timedelta(days=interval) - timedelta(hours=2):
-            should_run = True
-            print(f"Due for a new digest (last run: {lr.strftime('%Y-%m-%d %H:%M')}).")
-        else:
-            should_run = False
-            next_run = lr + timedelta(days=interval)
-            print(f"Already ran recently ({lr.strftime('%Y-%m-%d %H:%M')}).")
-            print(f"Next scheduled run: {next_run.strftime('%Y-%m-%d %H:%M')}.")
-            if not headless and open_latest_report():
-                print("Opened the latest digest in your browser.")
-
-        if should_run:
-            retries = 0
-            while not check_internet():
-                retries += 1
-                wait = min(30 * retries, 120)
-                log.warning("No internet — waiting %d min (attempt %d)", wait, retries)
-                print(f"No internet connection. Retrying in {wait} minutes…")
-                time.sleep(wait * 60)
-            try:
-                run_agent(is_fallback=not registered and not headless)
-            except Exception as exc:
-                log.error("Unhandled run error: %s", exc, exc_info=True)
-
-        # Single owner: in-process loop only when OS scheduler missing OR forced CLI
-        # --once always exits after the (optional) run above.
-        need_loop = (headless or not registered or args.cli_only) and not args.once
-        if need_loop:
-            log.warning("Running in-process fallback loop.")
-            print("\nRunning in background loop — leave window open (or use Docker/systemd).")
-            print("Tip: use --once for a single run that exits immediately.")
-            schedule.every(interval).days.do(lambda: run_agent(is_fallback=True))
-            try:
-                while not _SHUTDOWN:
-                    schedule.run_pending()
-                    time.sleep(60)
-            except KeyboardInterrupt:
-                print("\nStopped.")
-        else:
-            print()
-            if registered and not args.once:
-                print("✔  Done! CyberDigest is scheduled via OS.")
-                print("   Check status.txt or run --healthcheck to verify.")
-            elif args.once:
-                print("✔  One-shot run finished (--once).")
-            else:
-                print("✔  Done! CyberDigest is scheduled via OS.")
-                print("   Check status.txt or run --healthcheck to verify.")
+        _run_cli_mode(cfg, headless, args)
 
     finally:
         release_lock()

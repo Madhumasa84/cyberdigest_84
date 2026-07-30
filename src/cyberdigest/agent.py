@@ -83,9 +83,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
                 )
             ] = name
         for name, url, color in feeds["network"]:
-            futs[
-                ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)
-            ] = name
+            futs[ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)] = name
         for name, url, color in feeds["cisco"]:
             futs[ex.submit(fetch_feed, name, url, color, seen, "cisco", 20)] = name
         for name, url, color in feeds["fortinet"]:
@@ -130,9 +128,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     fortinet_clustered = cluster(fortinet_arts)
 
     # Enrich CVEs once before HTML (not during render)
-    all_clustered = (
-        cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
-    )
+    all_clustered = cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
     enrich_articles(all_clustered)
 
     save_articles(all_arts)

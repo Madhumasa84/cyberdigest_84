@@ -117,7 +117,17 @@ fortinet: []
     import cyberdigest.reports as reports_mod
 
     # Redirect paths
-    for mod in (paths, config_mod, db_mod, lock_mod, log_mod, agent_mod, reports_mod, feeds_mod, cli_mod):
+    for mod in (
+        paths,
+        config_mod,
+        db_mod,
+        lock_mod,
+        log_mod,
+        agent_mod,
+        reports_mod,
+        feeds_mod,
+        cli_mod,
+    ):
         if hasattr(mod, "DATA_DIR"):
             monkeypatch.setattr(mod, "DATA_DIR", data, raising=False)
         if hasattr(mod, "REPORTS_DIR"):

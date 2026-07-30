@@ -50,7 +50,11 @@ def run_healthcheck(*, require_scheduler: bool = False) -> int:
     if sched:
         lines.append("OS Scheduler  : ✔ Registered")
     else:
-        mode = "expected (headless/fallback OK)" if headless and not require_scheduler else "NOT registered"
+        mode = (
+            "expected (headless/fallback OK)"
+            if headless and not require_scheduler
+            else "NOT registered"
+        )
         lines.append(f"OS Scheduler  : ✘ {mode}")
         if require_scheduler or not headless:
             # Desktop installs expect a scheduler; headless Docker does not.
@@ -94,9 +98,7 @@ def run_healthcheck(*, require_scheduler: bool = False) -> int:
     lines.append(
         f"Email Delivery: {'Enabled' if cfg.get('email', {}).get('enabled') else 'Disabled'}"
     )
-    lines.append(
-        f"NVD API Key   : {'Set' if cfg.get('nvd_api_key') else 'Not set (rate-limited)'}"
-    )
+    lines.append(f"NVD API Key   : {'Set' if cfg.get('nvd_api_key') else 'Not set (rate-limited)'}")
     lines.append(f"GUI packages  : {'✔ Available' if has_gui() else '✘ Not installed (CLI only)'}")
     lines.append(f"Version       : {__version__}")
 
@@ -165,8 +167,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--healthcheck", action="store_true", help="Print health report and exit")
-    parser.add_argument("--uninstall", action="store_true", help="Remove OS scheduled task and exit")
-    parser.add_argument("--force", action="store_true", help="Force a run, bypassing last-run check")
+    parser.add_argument(
+        "--uninstall", action="store_true", help="Remove OS scheduled task and exit"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Force a run, bypassing last-run check"
+    )
     parser.add_argument("--cli-only", action="store_true", help="Run without system tray GUI")
     parser.add_argument(
         "--once",
@@ -221,9 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             lr = get_last_run()
             now = datetime.now()
             interval = cfg["interval_days"]
-            due = lr is None or (now - lr) >= timedelta(days=interval) - timedelta(
-                hours=2
-            )
+            due = lr is None or (now - lr) >= timedelta(days=interval) - timedelta(hours=2)
             if due:
                 print("Fetching your digest (browser will open when ready)…")
                 try:

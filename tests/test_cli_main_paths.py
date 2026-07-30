@@ -64,9 +64,7 @@ def test_main_recent_run_skips_agent(isolated_app, monkeypatch):
     _stub_runtime(monkeypatch, isolated_app)
     monkeypatch.setattr(cli, "is_headless", lambda: False)
     monkeypatch.setattr(cli, "has_gui", lambda: False)
-    monkeypatch.setattr(
-        db, "get_last_run", lambda: datetime.now() - timedelta(hours=1)
-    )
+    monkeypatch.setattr(db, "get_last_run", lambda: datetime.now() - timedelta(hours=1))
     monkeypatch.setattr(cli, "get_last_run", lambda: datetime.now() - timedelta(hours=1))
     ran = {"n": 0}
     monkeypatch.setattr(cli, "run_agent", lambda **k: ran.__setitem__("n", ran["n"] + 1) or True)

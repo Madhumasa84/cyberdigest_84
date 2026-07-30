@@ -39,3 +39,20 @@ def test_parse_feed_list_dict_items():
     raw = [{"name": "A", "url": "https://a.test/feed", "color": "#fff"}]
     out = _parse_feed_list(raw, [])
     assert out == [("A", "https://a.test/feed", "#fff")]
+
+def test_rss_fallback_et_parse_error():
+    # Force ET.ParseError by having invalid xml tag matching but keep <item> intact
+    raw = b"""<rss><channel>
+    <item><title>Valid Title</title><link>https://ex.com/valid</link>
+    <description>Valid Summary</description><pubDate>Valid PubDate</pubDate></item>
+    <item><description>No Title Or Link Here</description></item>
+    </invalid_unclosed_tag>
+    """
+
+    parsed = _parse_rss_fallback(raw)
+
+    assert len(parsed.entries) == 1
+    assert parsed.entries[0]["title"] == "Valid Title"
+    assert parsed.entries[0]["link"] == "https://ex.com/valid"
+    assert parsed.entries[0]["summary"] == "Valid Summary"
+    assert parsed.entries[0]["published"] == "Valid PubDate"

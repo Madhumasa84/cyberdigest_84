@@ -32,7 +32,9 @@ def test_is_headless_env(monkeypatch):
 
 
 def test_check_internet_mocked(monkeypatch):
-    monkeypatch.setattr(net.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        net.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError())
+    )
     assert net.check_internet() is False
 
     class Conn:
@@ -79,3 +81,25 @@ def test_lock_blocks_second_acquire(isolated_app, monkeypatch):
             fd.close()
         assert second is False
     release_lock()
+
+
+def test_load_seen(isolated_app):
+    from cyberdigest.db import get_db, load_seen, save_articles
+
+    # Initially empty
+    assert load_seen() == set()
+
+    # Save an article
+    save_articles([{"link": "https://example.com/1", "title": "Test 1", "source": "src1"}])
+
+    assert load_seen() == {"https://example.com/1"}
+
+    # Insert an old article manually
+    with get_db() as c:
+        c.execute(
+            "INSERT INTO articles(url, title, source, first_seen) VALUES (?, ?, ?, date('now', '-35 days'))",
+            ("https://example.com/2", "Test 2", "src1"),
+        )
+
+    # Should only return the recent one
+    assert load_seen() == {"https://example.com/1"}

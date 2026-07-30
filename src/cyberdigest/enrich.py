@@ -139,15 +139,22 @@ def fetch_cve_score(
         for ver in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
             if ver in metrics:
                 score = str(metrics[ver][0]["cvssData"]["baseScore"])
-                sev = (
-                    metrics[ver][0].get("baseSeverity")
-                    or metrics[ver][0]["cvssData"].get("baseSeverity", "UNKNOWN")
+                sev = metrics[ver][0].get("baseSeverity") or metrics[ver][0]["cvssData"].get(
+                    "baseSeverity", "UNKNOWN"
                 )
                 put_cve_cache(cve_id, score, sev)
                 budget.sleep_politely()
                 return score, sev
         budget.record_failure()
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError, IndexError) as exc:
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        KeyError,
+        IndexError,
+    ) as exc:
         budget.record_failure()
         log.debug("CVE lookup failed for %s: %s", cve_id, exc)
     except Exception as exc:  # pragma: no cover — unexpected
@@ -181,17 +188,13 @@ def enrich_articles(articles: list[dict]) -> dict[str, tuple[str, str]]:
             scores[cid] = info
     for a in articles:
         blob = f"{a.get('title', '')} {a.get('summary', '')}"
-        a["cve_scores"] = {
-            cid: scores[cid] for cid in extract_cve_ids(blob) if cid in scores
-        }
+        a["cve_scores"] = {cid: scores[cid] for cid in extract_cve_ids(blob) if cid in scores}
     if budget.lookups or budget.skipped or budget.cache_hits:
         log.info(budget.summary())
     return scores
 
 
-def format_with_cves(
-    text: str, cve_scores: dict[str, tuple[str, str]] | None = None
-) -> str:
+def format_with_cves(text: str, cve_scores: dict[str, tuple[str, str]] | None = None) -> str:
     """HTML-escape text and link CVE IDs with optional CVSS badges."""
     safe = h(text)
     scores = cve_scores or {}

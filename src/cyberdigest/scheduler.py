@@ -57,7 +57,7 @@ def register_scheduler() -> bool:
                 '<?xml version="1.0" encoding="UTF-8"?>\n'
                 '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
                 ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-                "<plist version=\"1.0\"><dict>\n"
+                '<plist version="1.0"><dict>\n'
                 "  <key>Label</key><string>com.cyberdigest</string>\n"
                 "  <key>ProgramArguments</key><array>\n"
                 f"    <string>{py_exec}</string>\n"
@@ -74,14 +74,10 @@ def register_scheduler() -> bool:
             pp = pd / "com.cyberdigest.plist"
             pp.write_text(plist)
             subprocess.run(["launchctl", "unload", str(pp)], capture_output=True)
-            subprocess.run(
-                ["launchctl", "load", str(pp)], check=True, capture_output=True
-            )
+            subprocess.run(["launchctl", "load", str(pp)], check=True, capture_output=True)
         elif os_name == "Linux":
             try:
-                cur = subprocess.run(
-                    ["crontab", "-l"], capture_output=True, text=True
-                ).stdout
+                cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
             except Exception:
                 cur = ""
             lines = [
@@ -118,9 +114,7 @@ def verify_scheduler() -> bool:
             )
             return "CyberDigest" in res.stdout
         if os_name == "Darwin":
-            res = subprocess.run(
-                ["launchctl", "list"], capture_output=True, text=True
-            )
+            res = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
             return "com.cyberdigest" in res.stdout
         if os_name == "Linux":
             res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)

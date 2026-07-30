@@ -21,14 +21,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_articles_per_network_feed": 5,
     "log_level": "INFO",
     "critical_keywords": [
-        "cve-", "zero-day", "0-day", "actively exploited",
-        "rce", "ransomware", "breach", "critical vulnerability",
-        "outage", "bgp hijack", "backbone failure", "ddos",
+        "cve-",
+        "zero-day",
+        "0-day",
+        "actively exploited",
+        "rce",
+        "ransomware",
+        "breach",
+        "critical vulnerability",
+        "outage",
+        "bgp hijack",
+        "backbone failure",
+        "ddos",
     ],
     "high_keywords": [
-        "vulnerability", "flaw", "patch", "exploit", "malware",
-        "deprecat", "end-of-life", "eol", "misconfiguration",
-        "sd-wan", "firmware update", "security advisory",
+        "vulnerability",
+        "flaw",
+        "patch",
+        "exploit",
+        "malware",
+        "deprecat",
+        "end-of-life",
+        "eol",
+        "misconfiguration",
+        "sd-wan",
+        "firmware update",
+        "security advisory",
     ],
     "email": {
         "enabled": False,
@@ -42,10 +60,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "nvd_api_key": "",
     # NVD rate-limit budget (keeps digests snappy without an API key)
     "nvd_enabled": True,
-    "nvd_max_lookups": 15,          # live HTTP lookups per run (cache free)
-    "nvd_timeout_seconds": 25,      # wall-clock seconds for all live lookups
-    "nvd_sleep_no_key": 0.6,        # polite delay without API key
-    "nvd_sleep_with_key": 0.2,      # delay with API key
+    "nvd_max_lookups": 15,  # live HTTP lookups per run (cache free)
+    "nvd_timeout_seconds": 25,  # wall-clock seconds for all live lookups
+    "nvd_sleep_no_key": 0.6,  # polite delay without API key
+    "nvd_sleep_with_key": 0.2,  # delay with API key
 }
 
 _CONFIG_REQUIRED_TYPES: dict[str, type] = {
@@ -106,9 +124,7 @@ def validate_config(cfg: dict) -> list[str]:
     for key, expected in _CONFIG_REQUIRED_TYPES.items():
         val = cfg.get(key)
         if not isinstance(val, expected):
-            errors.append(
-                f"config: '{key}' must be {expected.__name__}, got {type(val).__name__}"
-            )
+            errors.append(f"config: '{key}' must be {expected.__name__}, got {type(val).__name__}")
     if cfg.get("interval_days", 1) < 1:
         errors.append("config: 'interval_days' must be >= 1")
     if cfg.get("max_archived_reports", 1) < 1:
@@ -146,9 +162,7 @@ def _write_default_config() -> None:
                 "Copy to config.local.json for secrets, or set env vars: "
                 "CYBERDIGEST_SMTP_PASSWORD, NVD_API_KEY"
             )
-            CONFIG_EXAMPLE_FILE.write_text(
-                json.dumps(example, indent=4) + "\n", encoding="utf-8"
-            )
+            CONFIG_EXAMPLE_FILE.write_text(json.dumps(example, indent=4) + "\n", encoding="utf-8")
         except Exception as exc:
             log.debug("Could not write config.example.json: %s", exc)
 

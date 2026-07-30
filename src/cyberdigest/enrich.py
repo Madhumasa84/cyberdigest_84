@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 from cyberdigest.config import get_config
-from cyberdigest.db import get_cve_cached, put_cve_cache
+from cyberdigest.db import get_cve_cached, get_cve_cached_bulk, put_cve_cache
 from cyberdigest.logging_setup import log
 from cyberdigest.textutil import extract_cve_ids, h
 
@@ -175,10 +175,18 @@ def enrich_articles(articles: list[dict]) -> dict[str, tuple[str, str]]:
     """
     budget = _budget_from_config()
     scores: dict[str, tuple[str, str]] = {}
-    for cid in collect_cve_ids(articles):
-        info = fetch_cve_score(cid, budget=budget)
-        if info:
-            scores[cid] = info
+
+    cve_ids = collect_cve_ids(articles)
+    cached_scores = get_cve_cached_bulk(cve_ids)
+
+    for cid in cve_ids:
+        if cid in cached_scores:
+            scores[cid] = cached_scores[cid]
+            budget.record_cache_hit()
+        else:
+            info = fetch_cve_score(cid, budget=budget)
+            if info:
+                scores[cid] = info
     for a in articles:
         blob = f"{a.get('title', '')} {a.get('summary', '')}"
         a["cve_scores"] = {

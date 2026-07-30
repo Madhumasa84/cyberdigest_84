@@ -59,16 +59,25 @@ def test_offline_skips_run(isolated_app, monkeypatch):
 
 
 def test_fetch_feed_blocks_javascript_links(isolated_app, mock_feeds_http):
+    import asyncio
+
+    import aiohttp
+
     from cyberdigest.feeds import fetch_feed
 
-    arts = fetch_feed(
-        "Sample Cyber",
-        "https://fixtures.local/cyber.xml",
-        "#e74c3c",
-        set(),
-        "cyber",
-        10,
-    )
+    async def _run():
+        async with aiohttp.ClientSession() as session:
+            return await fetch_feed(
+                session,
+                "Sample Cyber",
+                "https://fixtures.local/cyber.xml",
+                "#e74c3c",
+                set(),
+                "cyber",
+                10,
+            )
+
+    arts = asyncio.run(_run())
     links = [a["link"] for a in arts]
     assert all(link.startswith("https://") for link in links)
     assert not any("javascript" in link for link in links)

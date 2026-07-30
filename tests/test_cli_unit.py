@@ -33,12 +33,16 @@ def test_healthcheck_offline_reports_issue(isolated_app, monkeypatch):
     monkeypatch.setattr(sched, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "is_headless", lambda: True)
-    monkeypatch.setattr(cli, "load_feeds", lambda: {
-        "cyber": [],
-        "network": [],
-        "cisco": [],
-        "fortinet": [],
-    })
+    monkeypatch.setattr(
+        cli,
+        "load_feeds",
+        lambda: {
+            "cyber": [],
+            "network": [],
+            "cisco": [],
+            "fortinet": [],
+        },
+    )
 
     rc = cli.run_healthcheck(require_scheduler=False)
     # No internet → overall unhealthy

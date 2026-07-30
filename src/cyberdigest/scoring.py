@@ -30,7 +30,17 @@ def _keyword_hit(text: str, keywords: list[str], short_re: re.Pattern | None) ->
                 return True
             continue
         # Short tokens: require boundary via dedicated regex or explicit check
-        if short_re and kl in {"rce", "ddos", "ransomware", "breach", "exploit", "malware", "patch", "vulnerability", "flaw"}:
+        if short_re and kl in {
+            "rce",
+            "ddos",
+            "ransomware",
+            "breach",
+            "exploit",
+            "malware",
+            "patch",
+            "vulnerability",
+            "flaw",
+        }:
             continue  # handled by short_re
         if re.search(rf"(?<![a-z0-9]){re.escape(kl)}(?![a-z0-9])", text):
             return True

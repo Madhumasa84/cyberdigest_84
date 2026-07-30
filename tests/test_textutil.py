@@ -35,6 +35,7 @@ def test_extract_cve_ids():
 
 def test_reading_time():
     from cyberdigest.textutil import reading_time
+
     assert reading_time("word") == "1 min read"
     assert reading_time("word " * 200) == "1 min read"
     assert reading_time("word " * 300) == "2 min read"

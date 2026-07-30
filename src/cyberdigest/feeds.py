@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import socket
 import time
-import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import aiohttp
 import feedparser
 
 from cyberdigest.config import get_config
@@ -40,11 +41,23 @@ DEFAULT_CYBER_FEEDS: list[tuple[str, str, str]] = [
     ("Cisco Talos", "https://blog.talosintelligence.com/rss/", "#049fd4"),
     ("Cisco Security", "https://feedpress.me/ciscosecurity", "#049fd4"),
     ("Palo Alto Unit 42", "https://feeds.feedburner.com/Unit42", "#fa4616"),
-    ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/", "#9b59b6"),
-    ("CISA Advisories", "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "#27ae60"),
+    (
+        "Sophos Threat Research",
+        "https://news.sophos.com/en-us/category/threat-research/feed/",
+        "#9b59b6",
+    ),
+    (
+        "CISA Advisories",
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "#27ae60",
+    ),
     ("Fortinet Blog", "https://feeds.feedburner.com/fortinetblog", "#ee3124"),
     ("Microsoft Security", "https://www.microsoft.com/security/blog/feed/", "#0078d4"),
-    ("Google Online Security Blog", "https://security.googleblog.com/feeds/posts/default?alt=rss", "#4285f4"),
+    (
+        "Google Online Security Blog",
+        "https://security.googleblog.com/feeds/posts/default?alt=rss",
+        "#4285f4",
+    ),
     ("WeLiveSecurity (ESET)", "https://feeds.feedburner.com/eset/blog", "#16a085"),
     ("Graham Cluley", "https://grahamcluley.com/feed/", "#e67e22"),
     ("Cloudflare Security", "https://blog.cloudflare.com/tag/security/rss", "#f38020"),
@@ -55,12 +68,20 @@ DEFAULT_NETWORK_FEEDS: list[tuple[str, str, str]] = [
     ("Network World", "https://www.networkworld.com/feed/", "#0ea5e9"),
     ("Packet Pushers", "https://feeds.packetpushers.net/packetpushersfullfeed/", "#6366f1"),
     ("Cisco Blogs", "https://blogs.cisco.com/developer/feed", "#049fd4"),
-    ("AWS Networking", "https://aws.amazon.com/blogs/networking-and-content-delivery/feed/", "#ff9900"),
+    (
+        "AWS Networking",
+        "https://aws.amazon.com/blogs/networking-and-content-delivery/feed/",
+        "#ff9900",
+    ),
     ("The New Stack", "https://thenewstack.io/feed/", "#0077c8"),
 ]
 
 DEFAULT_CISCO_PSIRT_FEEDS: list[tuple[str, str, str]] = [
-    ("Cisco PSIRT", "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml", "#049fd4"),
+    (
+        "Cisco PSIRT",
+        "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml",
+        "#049fd4",
+    ),
 ]
 
 DEFAULT_FORTINET_PSIRT_FEEDS: list[tuple[str, str, str]] = [
@@ -133,7 +154,9 @@ def _parse_simple_feeds_yaml(text: str) -> dict[str, Any]:
     return data
 
 
-def _parse_feed_list(raw: list | None, default: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _parse_feed_list(
+    raw: list | None, default: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     # None → defaults; explicit empty list → no feeds for that category
     if raw is None:
         return list(default)
@@ -174,7 +197,9 @@ def load_feeds() -> dict[str, list[tuple[str, str, str]]]:
                 cyber = _parse_feed_list(data.get("cyber") or data.get("cybersecurity"), cyber)
                 network = _parse_feed_list(data.get("network") or data.get("networking"), network)
                 cisco = _parse_feed_list(data.get("cisco") or data.get("cisco_psirt"), cisco)
-                fortinet = _parse_feed_list(data.get("fortinet") or data.get("fortinet_psirt"), fortinet)
+                fortinet = _parse_feed_list(
+                    data.get("fortinet") or data.get("fortinet_psirt"), fortinet
+                )
                 log.info("Loaded custom feeds from feeds.yaml")
         except Exception as exc:
             log.warning("Could not load feeds.yaml (%s) — using defaults", exc)
@@ -198,10 +223,10 @@ class _ParsedFeed:
     bozo: bool = False
 
 
-def _download_feed(url: str) -> bytes:
-    req = urllib.request.Request(url, headers=FEED_HEADERS)
-    with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-        return resp.read()
+async def _download_feed(session: aiohttp.ClientSession, url: str) -> bytes:
+    async with session.get(url, headers=FEED_HEADERS, timeout=FETCH_TIMEOUT) as resp:
+        resp.raise_for_status()
+        return await resp.read()
 
 
 def _xml_text(node: ET.Element, tag: str) -> str:
@@ -212,9 +237,7 @@ def _xml_text(node: ET.Element, tag: str) -> str:
 
 
 def _regex_tag_text(block: str, tag: str) -> str:
-    match = re.search(
-        rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, flags=re.IGNORECASE | re.DOTALL
-    )
+    match = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return ""
     text = re.sub(r"^\s*<!\[CDATA\[|\]\]>\s*$", "", match.group(1).strip())
@@ -232,9 +255,7 @@ def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
             summary = _xml_text(item, "description")
             pub = _xml_text(item, "pubDate") or _xml_text(item, "{*}date")
             if title or link:
-                entries.append(
-                    {"title": title, "link": link, "summary": summary, "published": pub}
-                )
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
     except ET.ParseError:
         for block in re.findall(
             r"<item\b[^>]*>(.*?)</item>", text, flags=re.IGNORECASE | re.DOTALL
@@ -244,9 +265,7 @@ def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
             summary = _regex_tag_text(block, "description")
             pub = _regex_tag_text(block, "pubDate")
             if title or link:
-                entries.append(
-                    {"title": title, "link": link, "summary": summary, "published": pub}
-                )
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
     return _ParsedFeed(entries)
 
 
@@ -292,17 +311,16 @@ def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
     return _ParsedFeed(entries)
 
 
-def _fetch_with_retry(name: str, url: str) -> Any:
+async def _fetch_with_retry(session: aiohttp.ClientSession, name: str, url: str) -> Any:
     delays = [2, 5, 10]
     last_exc: Exception | None = None
     for attempt, delay in enumerate(delays, 1):
         try:
             raw: bytes | None = None
             try:
-                raw = _download_feed(url)
+                raw = await _download_feed(session, url)
                 is_json_feed = (
-                    url.lower().endswith(".json")
-                    or "known_exploited_vulnerabilities" in url
+                    url.lower().endswith(".json") or "known_exploited_vulnerabilities" in url
                 )
                 if is_json_feed:
                     parsed_json = _parse_cisa_kev_json(raw)
@@ -339,11 +357,12 @@ def _fetch_with_retry(name: str, url: str) -> Any:
             last_exc = exc
             log.debug("Feed %s attempt %d/%d failed: %s", name, attempt, len(delays), exc)
             if attempt < len(delays):
-                time.sleep(delay)
+                await asyncio.sleep(delay)
     raise last_exc or RuntimeError("Feed fetch failed")
 
 
-def fetch_feed(
+async def fetch_feed(
+    session: aiohttp.ClientSession,
     name: str,
     url: str,
     color: str,
@@ -352,7 +371,7 @@ def fetch_feed(
     max_arts: int | None = None,
 ) -> list[dict]:
     try:
-        parsed = _fetch_with_retry(name, url)
+        parsed = await _fetch_with_retry(session, name, url)
         arts: list[dict] = []
         if not parsed:
             update_health(name, True)
@@ -364,9 +383,7 @@ def fetch_feed(
             if not link or link in seen:
                 continue
             title = strip_html(entry.get("title") or "Untitled")
-            summary = truncate(
-                strip_html(entry.get("summary") or entry.get("description") or "")
-            )
+            summary = truncate(strip_html(entry.get("summary") or entry.get("description") or ""))
             pub = strip_html(entry.get("published") or entry.get("updated") or "")
             pt = entry.get("published_parsed") or entry.get("updated_parsed")
             try:
@@ -382,9 +399,7 @@ def fetch_feed(
                     "timestamp": ts,
                     "color": color,
                     "source": name,
-                    "severity": score_severity(
-                        title, summary, source=name, category=category
-                    ),
+                    "severity": score_severity(title, summary, source=name, category=category),
                     "category": category,
                     "other_sources": set(),
                 }

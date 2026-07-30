@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import concurrent.futures
+import asyncio
 import os
 from datetime import datetime
 from pathlib import Path
+
+import aiohttp
 
 from cyberdigest.config import get_config
 from cyberdigest.db import get_health, load_seen, save_articles, set_last_run
@@ -68,32 +70,39 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     all_arts: list[dict] = []
 
     net_cap = cfg.get("max_articles_per_network_feed", 5)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(all_feeds), 16)) as ex:
-        futs: dict = {}
-        for name, url, color in feeds["cyber"]:
-            futs[
-                ex.submit(
-                    fetch_feed,
-                    name,
-                    url,
-                    color,
-                    seen,
-                    "cyber",
-                    cfg["max_articles_per_feed"],
+
+    async def _fetch_all() -> list[dict]:
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for name, url, color in feeds["cyber"]:
+                tasks.append(
+                    fetch_feed(
+                        session,
+                        name,
+                        url,
+                        color,
+                        seen,
+                        "cyber",
+                        cfg["max_articles_per_feed"],
+                    )
                 )
-            ] = name
-        for name, url, color in feeds["network"]:
-            futs[
-                ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)
-            ] = name
-        for name, url, color in feeds["cisco"]:
-            futs[ex.submit(fetch_feed, name, url, color, seen, "cisco", 20)] = name
-        for name, url, color in feeds["fortinet"]:
-            futs[ex.submit(fetch_feed, name, url, color, seen, "fortinet", 20)] = name
-        for fut in concurrent.futures.as_completed(futs):
-            result = fut.result()
-            if result:
-                all_arts.extend(result)
+            for name, url, color in feeds["network"]:
+                tasks.append(fetch_feed(session, name, url, color, seen, "network", net_cap))
+            for name, url, color in feeds["cisco"]:
+                tasks.append(fetch_feed(session, name, url, color, seen, "cisco", 20))
+            for name, url, color in feeds["fortinet"]:
+                tasks.append(fetch_feed(session, name, url, color, seen, "fortinet", 20))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            fetched_arts = []
+            for res in results:
+                if isinstance(res, Exception):
+                    log.error("Task failed: %s", res)
+                elif res:
+                    fetched_arts.extend(res)
+            return fetched_arts
+
+    all_arts = asyncio.run(_fetch_all())
 
     health_data = get_health()
     ok_count = sum(1 for f in all_feeds if health_data.get(f[0], 0) == 0)
@@ -130,9 +139,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     fortinet_clustered = cluster(fortinet_arts)
 
     # Enrich CVEs once before HTML (not during render)
-    all_clustered = (
-        cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
-    )
+    all_clustered = cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
     enrich_articles(all_clustered)
 
     save_articles(all_arts)

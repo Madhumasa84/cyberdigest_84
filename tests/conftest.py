@@ -117,7 +117,17 @@ fortinet: []
     import cyberdigest.reports as reports_mod
 
     # Redirect paths
-    for mod in (paths, config_mod, db_mod, lock_mod, log_mod, agent_mod, reports_mod, feeds_mod, cli_mod):
+    for mod in (
+        paths,
+        config_mod,
+        db_mod,
+        lock_mod,
+        log_mod,
+        agent_mod,
+        reports_mod,
+        feeds_mod,
+        cli_mod,
+    ):
         if hasattr(mod, "DATA_DIR"):
             monkeypatch.setattr(mod, "DATA_DIR", data, raising=False)
         if hasattr(mod, "REPORTS_DIR"):
@@ -184,7 +194,7 @@ def mock_feeds_http(monkeypatch):
     """Serve fixture RSS for known fixture URLs; fail others."""
     import cyberdigest.feeds as feeds
 
-    def fake_download(url: str) -> bytes:
+    async def fake_download(session, url: str) -> bytes:
         if url.endswith("cyber.xml") or "cyber.xml" in url:
             return SAMPLE_RSS.encode()
         if url.endswith("net.xml") or "net.xml" in url:
@@ -194,6 +204,9 @@ def mock_feeds_http(monkeypatch):
     monkeypatch.setattr(feeds, "_download_feed", fake_download)
     # Speed: no retry sleeps
     monkeypatch.setattr(feeds.time, "sleep", lambda *_a, **_k: None)
+    import asyncio
+
+    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: asyncio.sleep(0))
 
     import cyberdigest.enrich as enrich
 

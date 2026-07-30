@@ -125,6 +125,23 @@ def get_health() -> dict[str, int]:
         }
 
 
+def get_cve_cached_bulk(cve_ids: list[str]) -> dict[str, tuple[str, str]]:
+    if not cve_ids:
+        return {}
+
+    results = {}
+    # SQLite maximum variables limit can be 999 in older versions
+    chunk_size = 900
+    with get_db() as c:
+        for i in range(0, len(cve_ids), chunk_size):
+            chunk = cve_ids[i:i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            query = f"SELECT cve_id, score, severity FROM cve_cache WHERE cve_id IN ({placeholders})"
+            for row in c.execute(query, chunk).fetchall():
+                results[row["cve_id"]] = (row["score"], row["severity"])
+    return results
+
+
 def get_cve_cached(cve_id: str) -> tuple[str, str] | None:
     with get_db() as c:
         row = c.execute(

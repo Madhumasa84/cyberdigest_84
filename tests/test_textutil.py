@@ -26,6 +26,15 @@ def test_safe_http_url_blocks_javascript():
     assert safe_http_url(BadURL()) == "#"
 
 
+def test_safe_http_url_edge_cases():
+    # Missing netloc
+    assert safe_http_url("http://") == "#"
+    assert safe_http_url("https:///") == "#"
+
+    # Exception in urlparse
+    assert safe_http_url("http://[::1") == "#"
+
+
 def test_extract_cve_ids():
     ids = extract_cve_ids("See CVE-2024-1234 and cve-2023-99999 together")
     assert ids == ["CVE-2024-1234", "CVE-2023-99999"]

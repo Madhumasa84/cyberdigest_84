@@ -67,32 +67,20 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     all_feeds = feeds["cyber"] + feeds["network"] + feeds["cisco"] + feeds["fortinet"]
     all_arts: list[dict] = []
 
-    net_cap = cfg.get("max_articles_per_network_feed", 5)
+    caps = {
+        "cyber": cfg["max_articles_per_feed"],
+        "network": cfg.get("max_articles_per_network_feed", 5),
+        "cisco": 20,
+        "fortinet": 20,
+    }
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(all_feeds), 16)) as ex:
         futs: dict = {}
-        for name, url, color in feeds["cyber"]:
-            futs[
-                ex.submit(
-                    fetch_feed,
-                    name,
-                    url,
-                    color,
-                    seen,
-                    "cyber",
-                    cfg["max_articles_per_feed"],
-                )
-            ] = name
-        for name, url, color in feeds["network"]:
-            futs[
-                ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)
-            ] = name
-        for name, url, color in feeds["cisco"]:
-            futs[ex.submit(fetch_feed, name, url, color, seen, "cisco", 20)] = name
-        for name, url, color in feeds["fortinet"]:
-            futs[ex.submit(fetch_feed, name, url, color, seen, "fortinet", 20)] = name
+        for category in ["cyber", "network", "cisco", "fortinet"]:
+            for name, url, color in feeds[category]:
+                futs[ex.submit(fetch_feed, name, url, color, seen, category, caps[category])] = name
         for fut in concurrent.futures.as_completed(futs):
-            result = fut.result()
-            if result:
+            if result := fut.result():
                 all_arts.extend(result)
 
     health_data = get_health()
@@ -119,20 +107,12 @@ def run_agent(*, is_fallback: bool = False) -> bool:
             print("No previous reports to open. Try again after feeds return news.")
         return False
 
-    cyber_arts = [a for a in all_arts if a.get("category") == "cyber"]
-    network_arts = [a for a in all_arts if a.get("category") == "network"]
-    cisco_arts = [a for a in all_arts if a.get("category") == "cisco"]
-    fortinet_arts = [a for a in all_arts if a.get("category") == "fortinet"]
-
-    cyber_clustered = cluster(cyber_arts)
-    network_clustered = cluster(network_arts)
-    cisco_clustered = cluster(cisco_arts)
-    fortinet_clustered = cluster(fortinet_arts)
+    categories = ["cyber", "network", "cisco", "fortinet"]
+    arts = {cat: [a for a in all_arts if a.get("category") == cat] for cat in categories}
+    clustered = {cat: cluster(arts[cat]) for cat in categories}
 
     # Enrich CVEs once before HTML (not during render)
-    all_clustered = (
-        cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
-    )
+    all_clustered = sum(clustered.values(), [])
     enrich_articles(all_clustered)
 
     save_articles(all_arts)
@@ -147,115 +127,68 @@ def run_agent(*, is_fallback: bool = False) -> bool:
         else ""
     )
 
-    cyber_report = REPORTS_DIR / f"cybersec_report_{file_date}.html"
-    network_report = REPORTS_DIR / f"network_report_{file_date}.html"
-    cisco_report = REPORTS_DIR / f"cisco_report_{file_date}.html"
-    fortinet_report = REPORTS_DIR / f"fortinet_report_{file_date}.html"
+    prefixes = {
+        "cyber": "cybersec_report_",
+        "network": "network_report_",
+        "cisco": "cisco_report_",
+        "fortinet": "fortinet_report_",
+    }
+    reports = {cat: REPORTS_DIR / f"{prefixes[cat]}{file_date}.html" for cat in categories}
 
     def _nav_name(clustered: list, report: Path, prefix: str) -> str:
         if clustered:
             return report.name
         from cyberdigest.reports import latest_report_name
-
         return latest_report_name(prefix) or "index.html"
 
-    nav_targets = {
-        "cyber": _nav_name(cyber_clustered, cyber_report, "cybersec_report_"),
-        "network": _nav_name(network_clustered, network_report, "network_report_"),
-        "cisco": _nav_name(cisco_clustered, cisco_report, "cisco_report_"),
-        "fortinet": _nav_name(fortinet_clustered, fortinet_report, "fortinet_report_"),
+    nav_targets = {cat: _nav_name(clustered[cat], reports[cat], prefixes[cat]) for cat in categories}
+
+    htmls = {}
+    names = {
+        "cyber": "Cyber",
+        "network": "Network",
+        "cisco": "Cisco PSIRT",
+        "fortinet": "Fortinet PSIRT",
     }
 
-    html_cyber = ""
     try:
-        if cyber_clustered:
-            html_cyber = generate_html(
-                cyber_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["cyber"],
-                "cyber",
-                nav_targets,
-            )
-            _atomic_write(cyber_report, html_cyber)
-            log.info(
-                "Cyber report saved: %s (%d arts → %d clusters)",
-                cyber_report.name,
-                len(cyber_arts),
-                len(cyber_clustered),
-            )
-
-        if network_clustered:
-            html_net = generate_html(
-                network_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["network"],
-                "network",
-                nav_targets,
-            )
-            _atomic_write(network_report, html_net)
-            log.info(
-                "Network report saved: %s (%d arts → %d clusters)",
-                network_report.name,
-                len(network_arts),
-                len(network_clustered),
-            )
-
-        if cisco_clustered:
-            html_cisco = generate_html(
-                cisco_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["cisco"],
-                "cisco",
-                nav_targets,
-            )
-            _atomic_write(cisco_report, html_cisco)
-            log.info(
-                "Cisco PSIRT report saved: %s (%d arts → %d clusters)",
-                cisco_report.name,
-                len(cisco_arts),
-                len(cisco_clustered),
-            )
-
-        if fortinet_clustered:
-            html_fortinet = generate_html(
-                fortinet_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["fortinet"],
-                "fortinet",
-                nav_targets,
-            )
-            _atomic_write(fortinet_report, html_fortinet)
-            log.info(
-                "Fortinet PSIRT report saved: %s (%d arts → %d clusters)",
-                fortinet_report.name,
-                len(fortinet_arts),
-                len(fortinet_clustered),
-            )
+        for cat in categories:
+            if clustered[cat]:
+                html = generate_html(
+                    clustered[cat],
+                    file_date,
+                    health_data,
+                    sched_warn,
+                    feeds[cat],
+                    cat,
+                    nav_targets,
+                )
+                htmls[cat] = html
+                _atomic_write(reports[cat], html)
+                log.info(
+                    "%s report saved: %s (%d arts → %d clusters)",
+                    names[cat],
+                    reports[cat].name,
+                    len(arts[cat]),
+                    len(clustered[cat]),
+                )
 
         generate_index_html()
     except Exception as exc:
         log.error("Report write failed: %s", exc)
         return False
 
-    total_clustered = cyber_clustered + network_clustered
+    total_clustered = clustered["cyber"] + clustered["network"]
     n_crit = sum(1 for a in total_clustered if a["severity"] == "Critical")
-    if html_cyber:
-        send_email(html_cyber, date_long, len(total_clustered), n_crit)
+    if htmls.get("cyber"):
+        send_email(htmls["cyber"], date_long, len(total_clustered), n_crit)
 
     if not is_headless() and _HAS_PLYER:
         try:
             _plyer_notification.notify(
                 title="CyberDigest",
                 message=(
-                    f"{len(cyber_clustered)} cyber + {len(network_clustered)} network articles"
+                    f"{len(clustered['cyber'])} cyber + {len(clustered['network'])} network articles"
                     f" — {n_crit} critical"
                 ),
                 timeout=10,
@@ -263,7 +196,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
         except Exception:
             pass
 
-    report_paths = [cyber_report, network_report, cisco_report, fortinet_report]
+    report_paths = [reports["cyber"], reports["network"], reports["cisco"], reports["fortinet"]]
     rpt = first_available_report(report_paths)
     if rpt:
         if is_headless():

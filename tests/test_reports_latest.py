@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 def test_latest_report_name(isolated_app):
     import cyberdigest.reports as reports
 
@@ -13,7 +14,7 @@ def test_latest_report_name(isolated_app):
         "cybersec_report_20240101_1200.html",
         "cybersec_report_20240105_1200.html",
         "cybersec_report_20240103_1200.html",
-        "other_report_20240110_1200.html"
+        "other_report_20240110_1200.html",
     ]
     for r in reports_to_create:
         (rdir / r).write_text("dummy content", encoding="utf-8")
@@ -25,6 +26,7 @@ def test_latest_report_name(isolated_app):
     # Check what happens for other_report_
     other = reports.latest_report_name("other_report_")
     assert other == "other_report_20240110_1200.html"
+
 
 def test_first_available_report(isolated_app):
     import cyberdigest.reports as reports

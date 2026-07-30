@@ -57,9 +57,7 @@ def init_db() -> None:
 
 def get_last_run() -> datetime | None:
     with get_db() as c:
-        row = c.execute(
-            "SELECT value FROM agent_state WHERE key='last_run'"
-        ).fetchone()
+        row = c.execute("SELECT value FROM agent_state WHERE key='last_run'").fetchone()
         if row:
             try:
                 return datetime.fromisoformat(row["value"])
@@ -119,17 +117,13 @@ def get_health() -> dict[str, int]:
     with get_db() as c:
         return {
             r["source"]: r["consecutive_failures"]
-            for r in c.execute(
-                "SELECT source,consecutive_failures FROM feed_health"
-            ).fetchall()
+            for r in c.execute("SELECT source,consecutive_failures FROM feed_health").fetchall()
         }
 
 
 def get_cve_cached(cve_id: str) -> tuple[str, str] | None:
     with get_db() as c:
-        row = c.execute(
-            "SELECT score,severity FROM cve_cache WHERE cve_id=?", (cve_id,)
-        ).fetchone()
+        row = c.execute("SELECT score,severity FROM cve_cache WHERE cve_id=?", (cve_id,)).fetchone()
         if row:
             return row["score"], row["severity"]
     return None

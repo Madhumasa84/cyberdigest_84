@@ -30,11 +30,7 @@ def _card(art: dict) -> str:
     rt = reading_time(art["summary"])
     also = ""
     if art.get("other_sources"):
-        also = (
-            '<span class="also">Also: '
-            + h(", ".join(sorted(art["other_sources"])))
-            + "</span>"
-        )
+        also = '<span class="also">Also: ' + h(", ".join(sorted(art["other_sources"]))) + "</span>"
     link = safe_http_url(art.get("link"))
     cve_scores = art.get("cve_scores") or {}
     return (
@@ -43,7 +39,7 @@ def _card(art: dict) -> str:
         f'<div class="ctop">'
         f'<div class="bdgs">'
         f'<span class="bdg" style="background:{col}22;border:1px solid {col}55;color:{col}">'
-        f'{h(art["source"])}</span>'
+        f"{h(art['source'])}</span>"
         f'<span class="bdg {bc}">{h(sev)}</span>'
         f"</div>"
         f'<span class="rt">{h(rt)}</span>'
@@ -62,8 +58,10 @@ def _card(art: dict) -> str:
 def re_safe_color(color: str) -> str:
     """Allow only simple CSS hex colors from feed config."""
     c = (color or "").strip()
-    if len(c) in (4, 7) and c.startswith("#") and all(
-        ch in "0123456789abcdefABCDEF" for ch in c[1:]
+    if (
+        len(c) in (4, 7)
+        and c.startswith("#")
+        and all(ch in "0123456789abcdefABCDEF" for ch in c[1:])
     ):
         return c
     return "#3b82f6"
@@ -103,9 +101,7 @@ def latest_report_path() -> Path | None:
         _latest_report_name("cisco_report_"),
         _latest_report_name("fortinet_report_"),
     ]
-    return first_available_report(
-        [REPORTS_DIR / name for name in names if name]
-    )
+    return first_available_report([REPORTS_DIR / name for name in names if name])
 
 
 def _open_windows(path_str: str) -> None:
@@ -319,8 +315,7 @@ def generate_html(
         dc = "ok" if fails == 0 else ("fail" if fails >= 3 else "warn")
         tip = "OK" if fails == 0 else f"{fails} failure(s)"
         chips += (
-            f'<span class="chip" title="{h(tip)}">'
-            f'<span class="dot {dc}"></span>{h(name)}</span>'
+            f'<span class="chip" title="{h(tip)}"><span class="dot {dc}"></span>{h(name)}</span>'
         )
 
     cards_html = (
@@ -330,16 +325,48 @@ def generate_html(
     )
 
     nav_links = (
-        ("" if page_type == "cyber" else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if page_type == "cyber"
+            else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if page_type == "network"
+            else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if page_type == "cisco"
+            else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if page_type == "fortinet"
+            else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
     footer_links = (
-        ("" if page_type == "cyber" else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if page_type == "cyber"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if page_type == "network"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if page_type == "cisco"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if page_type == "fortinet"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
 
     hdr_right = (
@@ -395,7 +422,7 @@ def generate_html(
         + str(n_norm)
         + ")</button>"
         + "</div>"
-        + "<select class=\"sort\" id=\"ss\">"
+        + '<select class="sort" id="ss">'
         + "<option value='newest' selected>Sort: Newest</option>"
         + "<option value='severity'>Sort: Severity</option>"
         + "<option value='oldest'>Sort: Oldest</option>"
@@ -419,9 +446,7 @@ def generate_html(
     return _page(page_title + " \u2014 " + report_date, _CSS, body)
 
 
-def _prune_reports(
-    groups: list[list[Path]], max_arch: int, archive_global: bool
-) -> None:
+def _prune_reports(groups: list[list[Path]], max_arch: int, archive_global: bool) -> None:
     if archive_global:
         all_reports: list[Path] = []
         for g in groups:
@@ -500,12 +525,7 @@ def generate_index_html() -> None:
             latest_candidates.append(reports[0])
     latest_report = first_available_report(latest_candidates)
     latest_href = h(latest_report.name if latest_report else "index.html")
-    total = (
-        len(cyber_reports)
-        + len(network_reports)
-        + len(cisco_reports)
-        + len(fortinet_reports)
-    )
+    total = len(cyber_reports) + len(network_reports) + len(cisco_reports) + len(fortinet_reports)
 
     body = (
         '<div class="wrap">'

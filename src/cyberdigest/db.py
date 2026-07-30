@@ -134,6 +134,22 @@ def get_cve_cached(cve_id: str) -> tuple[str, str] | None:
             return row["score"], row["severity"]
     return None
 
+def get_cves_cached_bulk(cve_ids: list[str]) -> dict[str, tuple[str, str]]:
+    if not cve_ids:
+        return {}
+    res = {}
+    with get_db() as c:
+        # SQLite max variables limit is usually 999.
+        chunk_size = 900
+        for i in range(0, len(cve_ids), chunk_size):
+            chunk = cve_ids[i:i + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            query = f"SELECT cve_id, score, severity FROM cve_cache WHERE cve_id IN ({placeholders})"
+            rows = c.execute(query, chunk).fetchall()
+            for row in rows:
+                res[row["cve_id"]] = (row["score"], row["severity"])
+    return res
+
 
 def put_cve_cache(cve_id: str, score: str, severity: str) -> None:
     now = datetime.now().isoformat()

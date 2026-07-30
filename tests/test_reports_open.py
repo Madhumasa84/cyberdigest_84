@@ -75,3 +75,38 @@ def test_open_windows_uses_cmd_start(isolated_app, monkeypatch, tmp_path):
     assert ok is True
     assert seen["cmd"][0] == "cmd"
     assert "start" in seen["cmd"]
+
+def test_open_windows_os_startfile_error(isolated_app, monkeypatch, tmp_path):
+    import os
+    import platform
+    import subprocess
+
+    import cyberdigest.reports as reports
+
+    f = tmp_path / "win2.html"
+    f.write_text("<html>hi</html>", encoding="utf-8")
+    seen = {}
+
+    def fake_popen(cmd, **kwargs):
+        if cmd[0] == "cmd":
+            raise RuntimeError("cmd start failed")
+        seen["cmd"] = cmd
+
+        class P:
+            pass
+
+        return P()
+
+    def fake_startfile(filepath):
+        seen["startfile"] = filepath
+        raise OSError("os.startfile failed")
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(os, "startfile", fake_startfile, raising=False)
+
+    ok = reports.open_local_html(f)
+
+    assert ok is True
+    assert "startfile" in seen
+    assert seen["cmd"][0] == "powershell"

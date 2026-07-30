@@ -1,5 +1,5 @@
 from cyberdigest.config import reload_config
-from cyberdigest.reports import generate_html, re_safe_color
+from cyberdigest.reports import ReportContext, generate_html, re_safe_color
 
 
 def test_safe_color():
@@ -26,13 +26,15 @@ def test_generate_html_escapes_and_blocks_js_links():
         }
     ]
     html = generate_html(
-        arts,
-        "20260101_1200",
-        {},
-        "Schedule <b>warn</b>",
-        [("Test", "https://example.com", "#e74c3c")],
-        "cyber",
-        {},
+        ReportContext(
+            arts=arts,
+            report_date="20260101_1200",
+            health_data={},
+            sched_warn="Schedule <b>warn</b>",
+            feeds_list=[("Test", "https://example.com", "#e74c3c")],
+            page_type="cyber",
+            nav_targets={},
+        )
     )
     assert "<script>alert(1)</script>" not in html
     assert "javascript:alert" not in html

@@ -81,9 +81,7 @@ def _background_scheduler_only_when_needed(need_fallback: bool):
         return
 
     log.warning("No OS scheduler — starting in-process fallback loop.")
-    schedule.every(get_config()["interval_days"]).days.do(
-        lambda: run_agent(is_fallback=True)
-    )
+    schedule.every(get_config()["interval_days"]).days.do(lambda: run_agent(is_fallback=True))
     while not _SHUTDOWN:
         schedule.run_pending()
         time.sleep(60)
@@ -128,9 +126,7 @@ def run_tray_gui(
         _gui_open_latest()
         lr = get_last_run()
         interval = get_config()["interval_days"]
-        if lr is None or (datetime.now() - lr) >= timedelta(days=interval) - timedelta(
-            hours=2
-        ):
+        if lr is None or (datetime.now() - lr) >= timedelta(days=interval) - timedelta(hours=2):
 
             def _startup_fetch():
                 if not _FETCH_LOCK.acquire(blocking=False):

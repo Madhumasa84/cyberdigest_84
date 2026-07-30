@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -30,11 +31,7 @@ def _card(art: dict) -> str:
     rt = reading_time(art["summary"])
     also = ""
     if art.get("other_sources"):
-        also = (
-            '<span class="also">Also: '
-            + h(", ".join(sorted(art["other_sources"])))
-            + "</span>"
-        )
+        also = '<span class="also">Also: ' + h(", ".join(sorted(art["other_sources"]))) + "</span>"
     link = safe_http_url(art.get("link"))
     cve_scores = art.get("cve_scores") or {}
     return (
@@ -43,7 +40,7 @@ def _card(art: dict) -> str:
         f'<div class="ctop">'
         f'<div class="bdgs">'
         f'<span class="bdg" style="background:{col}22;border:1px solid {col}55;color:{col}">'
-        f'{h(art["source"])}</span>'
+        f"{h(art['source'])}</span>"
         f'<span class="bdg {bc}">{h(sev)}</span>'
         f"</div>"
         f'<span class="rt">{h(rt)}</span>'
@@ -62,8 +59,10 @@ def _card(art: dict) -> str:
 def re_safe_color(color: str) -> str:
     """Allow only simple CSS hex colors from feed config."""
     c = (color or "").strip()
-    if len(c) in (4, 7) and c.startswith("#") and all(
-        ch in "0123456789abcdefABCDEF" for ch in c[1:]
+    if (
+        len(c) in (4, 7)
+        and c.startswith("#")
+        and all(ch in "0123456789abcdefABCDEF" for ch in c[1:])
     ):
         return c
     return "#3b82f6"
@@ -103,9 +102,7 @@ def latest_report_path() -> Path | None:
         _latest_report_name("cisco_report_"),
         _latest_report_name("fortinet_report_"),
     ]
-    return first_available_report(
-        [REPORTS_DIR / name for name in names if name]
-    )
+    return first_available_report([REPORTS_DIR / name for name in names if name])
 
 
 def _open_windows(path_str: str) -> None:
@@ -252,18 +249,21 @@ def open_latest_report() -> bool:
     return open_local_html(rpt)
 
 
-def generate_html(
-    arts: list[dict],
-    report_date: str,
-    health_data: dict[str, int],
-    sched_warn: str,
-    feeds_list: list[tuple[str, str, str]],
-    page_type: str = "cyber",
-    nav_targets: dict[str, str] | None = None,
-) -> str:
+@dataclass
+class ReportContext:
+    arts: list[dict]
+    report_date: str
+    health_data: dict[str, int]
+    sched_warn: str
+    feeds_list: list[tuple[str, str, str]]
+    page_type: str = "cyber"
+    nav_targets: dict[str, str] | None = None
+
+
+def _prepare_template_data(ctx: ReportContext) -> dict:
     cfg = get_config()
     sev_ord = {"Critical": 0, "High": 1, "Normal": 2}
-    arts = sorted(arts, key=lambda x: (-x["timestamp"], sev_ord.get(x["severity"], 3)))
+    arts = sorted(ctx.arts, key=lambda x: (-x["timestamp"], sev_ord.get(x["severity"], 3)))
 
     total = len(arts)
     n_crit = sum(1 for a in arts if a["severity"] == "Critical")
@@ -278,14 +278,14 @@ def generate_html(
         "cisco": ("&#x1F4CB;", "Cisco PSIRT Advisories", "CiscoAdvisories"),
         "fortinet": ("&#x1F6E1;", "Fortinet PSIRT Advisories", "FortiAdvisories"),
     }
-    page_icon, page_label, page_title = type_meta.get(page_type, type_meta["cyber"])
-    nav_targets = nav_targets or {}
+    page_icon, page_label, page_title = type_meta.get(ctx.page_type, type_meta["cyber"])
+    nav_targets = ctx.nav_targets or {}
 
     def _nav_href(page: str, prefix: str) -> str:
         target = nav_targets.get(page)
         if target:
             return h(target)
-        exact = REPORTS_DIR / f"{prefix}{report_date}.html"
+        exact = REPORTS_DIR / f"{prefix}{ctx.report_date}.html"
         if exact.exists():
             return h(exact.name)
         return h(_latest_report_name(prefix) or "index.html")
@@ -296,31 +296,30 @@ def generate_html(
     nav_fortinet = _nav_href("fortinet", "fortinet_report_")
 
     alerts = ""
-    if sched_warn:
+    if ctx.sched_warn:
         alerts += (
             '<div class="alert ai"><span class="ai-ico">&#8505;</span><span>'
-            + h(sched_warn)
+            + h(ctx.sched_warn)
             + "</span></div>"
         )
-    for name, _, _ in feeds_list:
-        if health_data.get(name, 0) >= 5:
+    for name, _, _ in ctx.feeds_list:
+        if ctx.health_data.get(name, 0) >= 5:
             alerts += (
                 '<div class="alert ae"><span class="ai-ico">&#9888;</span>'
                 "<span><strong>"
                 + h(name)
                 + "</strong> has failed "
-                + str(health_data[name])
+                + str(ctx.health_data[name])
                 + " consecutive times.</span></div>"
             )
 
     chips = ""
-    for name, _, _ in feeds_list:
-        fails = health_data.get(name, 0)
+    for name, _, _ in ctx.feeds_list:
+        fails = ctx.health_data.get(name, 0)
         dc = "ok" if fails == 0 else ("fail" if fails >= 3 else "warn")
         tip = "OK" if fails == 0 else f"{fails} failure(s)"
         chips += (
-            f'<span class="chip" title="{h(tip)}">'
-            f'<span class="dot {dc}"></span>{h(name)}</span>'
+            f'<span class="chip" title="{h(tip)}"><span class="dot {dc}"></span>{h(name)}</span>'
         )
 
     cards_html = (
@@ -330,16 +329,48 @@ def generate_html(
     )
 
     nav_links = (
-        ("" if page_type == "cyber" else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if ctx.page_type == "cyber"
+            else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "network"
+            else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "cisco"
+            else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "fortinet"
+            else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
     footer_links = (
-        ("" if page_type == "cyber" else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if ctx.page_type == "cyber"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "network"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "cisco"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if ctx.page_type == "fortinet"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
 
     hdr_right = (
@@ -350,78 +381,101 @@ def generate_html(
         + "</div></header>"
     )
 
+    return {
+        "page_title": page_title,
+        "page_icon": page_icon,
+        "page_label": page_label,
+        "report_date": ctx.report_date,
+        "hdr_right": hdr_right,
+        "total": total,
+        "n_crit": n_crit,
+        "n_high": n_high,
+        "n_norm": n_norm,
+        "sources_len": len(sources),
+        "alerts": alerts,
+        "chips": chips,
+        "cards_html": cards_html,
+        "interval_days": cfg["interval_days"],
+        "footer_links": footer_links,
+    }
+
+
+def _render_html(data: dict) -> str:
     body = (
         '<div class="wrap">'
         + '<header class="site-header"><div class="logo">'
-        + f'<div class="logo-icon">{page_icon}</div>'
+        + f'<div class="logo-icon">{data["page_icon"]}</div>'
         + '<div class="logo-text"><h1>CyberDigest</h1>'
-        + f'<div class="tag">{page_label} &middot; {h(report_date)}</div>'
+        + f'<div class="tag">{data["page_label"]} &middot; {h(data["report_date"])}</div>'
         + "</div></div>"
-        + hdr_right
+        + data["hdr_right"]
         + '<div class="stats-bar">'
         + '<div class="scard"><div class="snum">'
-        + str(total)
+        + str(data["total"])
         + '</div><div class="slbl">Articles</div></div>'
         + '<div class="scard"><div class="snum red">'
-        + str(n_crit)
+        + str(data["n_crit"])
         + '</div><div class="slbl">Critical</div></div>'
         + '<div class="scard"><div class="snum amb">'
-        + str(n_high)
+        + str(data["n_high"])
         + '</div><div class="slbl">High</div></div>'
         + '<div class="scard"><div class="snum grn">'
-        + str(n_norm)
+        + str(data["n_norm"])
         + '</div><div class="slbl">Normal</div></div>'
         + '<div class="scard"><div class="snum">'
-        + str(len(sources))
+        + str(data["sources_len"])
         + '</div><div class="slbl">Sources</div></div>'
         + "</div>"
-        + alerts
+        + data["alerts"]
         + '<div class="hp"><span class="hp-lbl">&#x1F4E1; Feeds</span>'
-        + chips
+        + data["chips"]
         + "</div>"
         + '<div class="controls">'
         + '<input id="si" class="search" type="search" placeholder="Search articles, CVEs, sources…" autocomplete="off">'
         + '<div class="tabs">'
         + '<button class="tab on" data-f="All">All ('
-        + str(total)
+        + str(data["total"])
         + ")</button>"
         + '<button class="tab"    data-f="Critical">&#x1F534; Critical ('
-        + str(n_crit)
+        + str(data["n_crit"])
         + ")</button>"
         + '<button class="tab"    data-f="High">&#x1F7E0; High ('
-        + str(n_high)
+        + str(data["n_high"])
         + ")</button>"
         + '<button class="tab"    data-f="Normal">&#x1F535; Normal ('
-        + str(n_norm)
+        + str(data["n_norm"])
         + ")</button>"
         + "</div>"
-        + "<select class=\"sort\" id=\"ss\">"
+        + '<select class="sort" id="ss">'
         + "<option value='newest' selected>Sort: Newest</option>"
         + "<option value='severity'>Sort: Severity</option>"
         + "<option value='oldest'>Sort: Oldest</option>"
         + "</select></div>"
         + '<div class="rbar" id="rb"></div>'
         + '<main class="grid" id="grid">'
-        + cards_html
+        + data["cards_html"]
         + "</main>"
         + '<footer class="site-footer">'
         + "CyberDigest &mdash; self-healing &middot; next run in "
-        + str(cfg["interval_days"])
+        + str(data["interval_days"])
         + " days"
         + " &nbsp;&middot;&nbsp; "
         + '<a href="index.html">Past Reports</a>'
-        + footer_links
+        + data["footer_links"]
         + "</footer></div>"
         + "<script>"
         + _JS
         + "</script>"
     )
-    return _page(page_title + " \u2014 " + report_date, _CSS, body)
+    return _page(data["page_title"] + " \u2014 " + data["report_date"], _CSS, body)
 
 
-def _prune_reports(
-    groups: list[list[Path]], max_arch: int, archive_global: bool
-) -> None:
+def generate_html(ctx: ReportContext) -> str:
+    data = _prepare_template_data(ctx)
+    return _render_html(data)
+
+
+def _prune_reports(groups: list[list[Path]], max_arch: int, archive_global: bool) -> None:
     if archive_global:
         all_reports: list[Path] = []
         for g in groups:
@@ -500,12 +554,7 @@ def generate_index_html() -> None:
             latest_candidates.append(reports[0])
     latest_report = first_available_report(latest_candidates)
     latest_href = h(latest_report.name if latest_report else "index.html")
-    total = (
-        len(cyber_reports)
-        + len(network_reports)
-        + len(cisco_reports)
-        + len(fortinet_reports)
-    )
+    total = len(cyber_reports) + len(network_reports) + len(cisco_reports) + len(fortinet_reports)
 
     body = (
         '<div class="wrap">'

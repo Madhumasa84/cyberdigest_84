@@ -16,6 +16,7 @@ from cyberdigest.logging_setup import log
 from cyberdigest.network import check_internet, is_headless
 from cyberdigest.paths import HEARTBEAT_FILE, REPORTS_DIR, STATUS_FILE
 from cyberdigest.reports import (
+    ReportContext,
     first_available_report,
     generate_html,
     generate_index_html,
@@ -83,9 +84,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
                 )
             ] = name
         for name, url, color in feeds["network"]:
-            futs[
-                ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)
-            ] = name
+            futs[ex.submit(fetch_feed, name, url, color, seen, "network", net_cap)] = name
         for name, url, color in feeds["cisco"]:
             futs[ex.submit(fetch_feed, name, url, color, seen, "cisco", 20)] = name
         for name, url, color in feeds["fortinet"]:
@@ -130,9 +129,7 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     fortinet_clustered = cluster(fortinet_arts)
 
     # Enrich CVEs once before HTML (not during render)
-    all_clustered = (
-        cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
-    )
+    all_clustered = cyber_clustered + network_clustered + cisco_clustered + fortinet_clustered
     enrich_articles(all_clustered)
 
     save_articles(all_arts)
@@ -170,13 +167,15 @@ def run_agent(*, is_fallback: bool = False) -> bool:
     try:
         if cyber_clustered:
             html_cyber = generate_html(
-                cyber_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["cyber"],
-                "cyber",
-                nav_targets,
+                ReportContext(
+                    arts=cyber_clustered,
+                    report_date=file_date,
+                    health_data=health_data,
+                    sched_warn=sched_warn,
+                    feeds_list=feeds["cyber"],
+                    page_type="cyber",
+                    nav_targets=nav_targets,
+                )
             )
             _atomic_write(cyber_report, html_cyber)
             log.info(
@@ -188,13 +187,15 @@ def run_agent(*, is_fallback: bool = False) -> bool:
 
         if network_clustered:
             html_net = generate_html(
-                network_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["network"],
-                "network",
-                nav_targets,
+                ReportContext(
+                    arts=network_clustered,
+                    report_date=file_date,
+                    health_data=health_data,
+                    sched_warn=sched_warn,
+                    feeds_list=feeds["network"],
+                    page_type="network",
+                    nav_targets=nav_targets,
+                )
             )
             _atomic_write(network_report, html_net)
             log.info(
@@ -206,13 +207,15 @@ def run_agent(*, is_fallback: bool = False) -> bool:
 
         if cisco_clustered:
             html_cisco = generate_html(
-                cisco_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["cisco"],
-                "cisco",
-                nav_targets,
+                ReportContext(
+                    arts=cisco_clustered,
+                    report_date=file_date,
+                    health_data=health_data,
+                    sched_warn=sched_warn,
+                    feeds_list=feeds["cisco"],
+                    page_type="cisco",
+                    nav_targets=nav_targets,
+                )
             )
             _atomic_write(cisco_report, html_cisco)
             log.info(
@@ -224,13 +227,15 @@ def run_agent(*, is_fallback: bool = False) -> bool:
 
         if fortinet_clustered:
             html_fortinet = generate_html(
-                fortinet_clustered,
-                file_date,
-                health_data,
-                sched_warn,
-                feeds["fortinet"],
-                "fortinet",
-                nav_targets,
+                ReportContext(
+                    arts=fortinet_clustered,
+                    report_date=file_date,
+                    health_data=health_data,
+                    sched_warn=sched_warn,
+                    feeds_list=feeds["fortinet"],
+                    page_type="fortinet",
+                    nav_targets=nav_targets,
+                )
             )
             _atomic_write(fortinet_report, html_fortinet)
             log.info(

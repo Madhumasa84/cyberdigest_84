@@ -9,7 +9,6 @@ def test_windows_branch_acquire_release(isolated_app, monkeypatch):
     # Force Windows PID-file path even on Linux
     monkeypatch.setattr(lock_mod.platform, "system", lambda: "Windows")
     monkeypatch.setattr(lock_mod, "fcntl", None)
-    lock_mod._LOCK_FD = None
     lock_mod.LOCK_FILE.unlink(missing_ok=True)
 
     assert lock_mod.acquire_lock() is True
@@ -18,6 +17,7 @@ def test_windows_branch_acquire_release(isolated_app, monkeypatch):
     monkeypatch.setattr(lock_mod, "_pid_alive", lambda pid: True)
     assert lock_mod.acquire_lock() is False
 
+    lock_mod.release_lock()
     monkeypatch.setattr(lock_mod, "_pid_alive", lambda pid: False)
     # Stale lock should be reclaimable
     lock_mod.LOCK_FILE.write_text("999999", encoding="utf-8")

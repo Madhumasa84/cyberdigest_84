@@ -39,7 +39,6 @@ def test_register_windows_ok(monkeypatch):
 
     monkeypatch.setattr(sched.subprocess, "run", lambda *a, **k: Res())
     monkeypatch.setattr(sched, "verify_scheduler", lambda: True)
-    monkeypatch.setattr(sched, "get_config", lambda: {"interval_days": 3})
     assert sched.register_scheduler() is True
 
 
@@ -52,7 +51,6 @@ def test_register_windows_fail(monkeypatch):
         stderr = "access denied"
 
     monkeypatch.setattr(sched.subprocess, "run", lambda *a, **k: Res())
-    monkeypatch.setattr(sched, "get_config", lambda: {"interval_days": 3})
     assert sched.register_scheduler() is False
 
 
@@ -69,7 +67,6 @@ def test_register_darwin(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sched.subprocess, "run", lambda *a, **k: Res())
     monkeypatch.setattr(sched, "verify_scheduler", lambda: True)
-    monkeypatch.setattr(sched, "get_config", lambda: {"interval_days": 2})
     assert sched.register_scheduler() is True
     plist = home / "Library" / "LaunchAgents" / "com.cyberdigest.plist"
     assert plist.exists()

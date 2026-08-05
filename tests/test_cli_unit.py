@@ -33,12 +33,16 @@ def test_healthcheck_offline_reports_issue(isolated_app, monkeypatch):
     monkeypatch.setattr(sched, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "is_headless", lambda: True)
-    monkeypatch.setattr(cli, "load_feeds", lambda: {
-        "cyber": [],
-        "network": [],
-        "cisco": [],
-        "fortinet": [],
-    })
+    monkeypatch.setattr(
+        cli,
+        "load_feeds",
+        lambda: {
+            "cyber": [],
+            "network": [],
+            "cisco": [],
+            "fortinet": [],
+        },
+    )
 
     rc = cli.run_healthcheck(require_scheduler=False)
     # No internet → overall unhealthy
@@ -54,10 +58,24 @@ def test_healthcheck_headless_without_scheduler_can_be_healthy(
     monkeypatch.setattr(sched, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "verify_scheduler", lambda: False)
     monkeypatch.setattr(cli, "is_headless", lambda: True)
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(cli.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
     monkeypatch.setattr(
         cli,
         "load_feeds",
-        lambda: {"cyber": [], "network": [], "cisco": [], "fortinet": []},
+        lambda: {
+            "cyber": [("Example", "https://example.test/feed", "#fff")],
+            "network": [],
+            "cisco": [],
+            "fortinet": [],
+        },
     )
 
     rc = cli.run_healthcheck(require_scheduler=False)

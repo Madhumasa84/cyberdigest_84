@@ -28,6 +28,35 @@ def test_validate_email_enabled():
     assert len(errs) >= 3
 
 
+def test_validate_rejects_invalid_text_and_numeric_settings():
+    cfg = dict(config_mod.DEFAULT_CONFIG)
+    cfg["critical_keywords"] = ["valid", ""]
+    cfg["log_level"] = "VERBOSE"
+    cfg["nvd_sleep_no_key"] = -0.1
+    cfg["nvd_timeout_seconds"] = True
+
+    errors = config_mod.validate_config(cfg)
+
+    assert any("critical_keywords" in error for error in errors)
+    assert any("log_level" in error for error in errors)
+    assert any("nvd_sleep_no_key" in error for error in errors)
+    assert any("nvd_timeout_seconds" in error for error in errors)
+
+
+def test_invalid_local_config_root_raises(monkeypatch, tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps(config_mod.DEFAULT_CONFIG), encoding="utf-8")
+    (tmp_path / "config.local.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "config.json")
+    monkeypatch.setattr(config_mod, "CONFIG_LOCAL_FILE", tmp_path / "config.local.json")
+    monkeypatch.setattr(config_mod, "CONFIG_EXAMPLE_FILE", tmp_path / "config.example.json")
+
+    try:
+        config_mod.load_config(exit_on_error=False)
+        assert False, "expected error"
+    except ValueError as exc:
+        assert "root must be an object" in str(exc)
+
+
 def test_write_default_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "config.json")
     monkeypatch.setattr(config_mod, "CONFIG_LOCAL_FILE", tmp_path / "config.local.json")

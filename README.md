@@ -3,7 +3,7 @@
 > **A self-healing, reboot-proof cybersecurity news agent.**  
 > Clone it. Run one command. Get multi-page HTML digests — forever.
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Version](https://img.shields.io/badge/version-4.3-informational)
@@ -55,7 +55,7 @@ cd cyberdigest_84
 The launcher:
 
 1. Switches to the project folder (safe for double-click)  
-2. Finds or installs Python 3  
+2. Finds or installs Python 3.10+
 3. Creates `venv` and installs packages on first run  
 4. Starts CyberDigest (tray on desktop, report in browser)  
 5. Registers OS scheduling when possible  
@@ -90,7 +90,7 @@ docker compose up -d
 ```
 cyberdigest_84/
 ├── news_agent.py           # Backward-compatible entrypoint
-├── cyberdigest/            # Application package
+├── src/cyberdigest/        # Installable application package
 │   ├── agent.py            # Fetch → score → enrich → report pipeline
 │   ├── feeds.py            # Feed catalog + fetch/parse
 │   ├── scoring.py          # Severity + clustering
@@ -110,7 +110,6 @@ cyberdigest_84/
 ├── start.command           # macOS one-click
 ├── start.sh                # Linux / macOS launcher
 ├── requirements.txt
-├── requirements-dev.txt
 ├── pyproject.toml
 ├── Dockerfile
 ├── docker-compose.yml
@@ -123,7 +122,11 @@ cyberdigest_84/
 └── tests/
 ```
 
-Runtime data (gitignored): `state.db`, `reports/`, `agent_log.txt`, `status.txt`, `heartbeat.txt`, `agent.lock`.
+Runtime data (gitignored): `state.db`, `reports/`, `agent_log.txt`, `status.txt`,
+`heartbeat.txt`, `agent.lock`, and `run.lock`.
+
+Source checkouts keep data in the repository folder. Installed wheels use the OS
+user-data directory unless `CYBERDIGEST_DATA_DIR` is set.
 
 ---
 
@@ -164,9 +167,10 @@ Prefer **environment variables** or **`config.local.json`** (gitignored):
 | `CYBERDIGEST_SMTP_PASSWORD` | SMTP password / app password |
 | `CYBERDIGEST_SMTP_USERNAME` | SMTP user |
 | `CYBERDIGEST_EMAIL_FROM` / `CYBERDIGEST_EMAIL_TO` | Addresses |
-| `CYBERDIGEST_EMAIL_ENABLED` | `true` to enable email |
+| `CYBERDIGEST_EMAIL_ENABLED` | `true` or `false` email override |
 | `CYBERDIGEST_HEADLESS` | Force headless mode |
 | `CYBERDIGEST_DATA_DIR` | Relocate DB/logs/reports |
+| `CYBERDIGEST_CONFIG_DIR` | Relocate config and `feeds.yaml` |
 
 Example `config.local.json`:
 
@@ -232,7 +236,14 @@ python3 news_agent.py --version
 | Desktop + OS schedule OK | OS cron/schtasks/launchd only |
 | Desktop + schedule failed | In-process `schedule` loop (keep process alive) |
 | Docker / headless | In-process loop only (no host crontab mutation) |
+| Explicit `--cli-only` | In-process loop only (no competing OS registration) |
+| `--once` / `--force` | One cycle, protected by a dedicated run lock, then exit |
 | Tray open + OS schedule | Tray does **not** double-run; OS fires separate jobs |
+
+OS schedulers perform one lightweight due check each day. The configured
+`interval_days` is enforced by CyberDigest itself, avoiding cron month-boundary
+errors and allowing a failed cycle to retry the next day. In-process fallback
+modes check hourly, while still generating reports only when the interval is due.
 
 ---
 
@@ -264,7 +275,9 @@ make security
 | CI | Ubuntu + Windows + macOS | on push/PR |
 | Release | tag `v*` | build + GitHub Release |
 
-Production Linux: `deploy/cyberdigest.service`. Desktop shortcut template: `deploy/cyberdigest.desktop`.
+Production Linux: `deploy/cyberdigest.service`. Desktop shortcut template:
+`deploy/cyberdigest.desktop`. Both templates assume the checkout is installed at
+`/opt/cyberdigest`.
 
 ### NVD budget (keeps digests fast)
 
@@ -294,7 +307,8 @@ After clone/unzip: yes — double-click `start.bat` / `start.command` / `start.s
 Only if OS scheduling failed (fallback loop), or you used `--cli-only` without `--once`. Otherwise close freely after setup.
 
 **Internet was down during a run?**  
-The agent waits and retries; empty digests are avoided when offline at start.
+Persistent modes wait and retry. One-shot jobs exit non-zero so cron, systemd, or
+another orchestrator can retry; failed runs do not advance the successful-run timestamp.
 
 **How do I uninstall?**  
 `python3 news_agent.py --uninstall`, then delete the folder.

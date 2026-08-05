@@ -1,4 +1,6 @@
-from cyberdigest.feeds import _parse_feed_list, _parse_rss_fallback
+import pytest
+
+from cyberdigest.feeds import _download_feed, _parse_feed_list, _parse_rss_fallback
 
 
 def test_rss_fallback_regex_path():
@@ -39,3 +41,13 @@ def test_parse_feed_list_dict_items():
     raw = [{"name": "A", "url": "https://a.test/feed", "color": "#fff"}]
     out = _parse_feed_list(raw, [])
     assert out == [("A", "https://a.test/feed", "#fff")]
+
+
+def test_parse_feed_list_rejects_non_http_urls():
+    raw = [{"name": "Local file", "url": "file:///etc/passwd"}]
+    assert _parse_feed_list(raw, []) == []
+
+
+def test_download_feed_rejects_non_http_url():
+    with pytest.raises(ValueError, match="http or https"):
+        _download_feed("file:///etc/passwd")

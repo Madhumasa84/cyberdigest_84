@@ -12,7 +12,9 @@ from cyberdigest.paths import LOG_FILE
 def setup_logging(level: str = "INFO") -> logging.Logger:
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
     log = logging.getLogger("cyberdigest")
-    log.handlers.clear()
+    for existing in list(log.handlers):
+        log.removeHandler(existing)
+        existing.close()
     log.setLevel(getattr(logging, level.upper(), logging.INFO))
     log.propagate = False
 

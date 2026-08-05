@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+import schedule
 
 SAMPLE_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -116,8 +117,22 @@ fortinet: []
     import cyberdigest.paths as paths
     import cyberdigest.reports as reports_mod
 
+    lock_mod.release_run_lock()
+    lock_mod.release_lock()
+    schedule.clear()
+
     # Redirect paths
-    for mod in (paths, config_mod, db_mod, lock_mod, log_mod, agent_mod, reports_mod, feeds_mod, cli_mod):
+    for mod in (
+        paths,
+        config_mod,
+        db_mod,
+        lock_mod,
+        log_mod,
+        agent_mod,
+        reports_mod,
+        feeds_mod,
+        cli_mod,
+    ):
         if hasattr(mod, "DATA_DIR"):
             monkeypatch.setattr(mod, "DATA_DIR", data, raising=False)
         if hasattr(mod, "REPORTS_DIR"):
@@ -132,6 +147,8 @@ fortinet: []
             monkeypatch.setattr(mod, "HEARTBEAT_FILE", data / "heartbeat.txt", raising=False)
         if hasattr(mod, "LOCK_FILE"):
             monkeypatch.setattr(mod, "LOCK_FILE", data / "agent.lock", raising=False)
+        if hasattr(mod, "RUN_LOCK_FILE"):
+            monkeypatch.setattr(mod, "RUN_LOCK_FILE", data / "run.lock", raising=False)
         if hasattr(mod, "CONFIG_FILE"):
             monkeypatch.setattr(mod, "CONFIG_FILE", cfg_path, raising=False)
         if hasattr(mod, "CONFIG_LOCAL_FILE"):
@@ -148,6 +165,7 @@ fortinet: []
     monkeypatch.setattr(paths, "STATUS_FILE", data / "status.txt")
     monkeypatch.setattr(paths, "HEARTBEAT_FILE", data / "heartbeat.txt")
     monkeypatch.setattr(paths, "LOCK_FILE", data / "agent.lock")
+    monkeypatch.setattr(paths, "RUN_LOCK_FILE", data / "run.lock")
     monkeypatch.setattr(paths, "CONFIG_FILE", cfg_path)
     monkeypatch.setattr(paths, "CONFIG_LOCAL_FILE", cfg_local)
     monkeypatch.setattr(paths, "CONFIG_EXAMPLE_FILE", cfg_example)
@@ -159,22 +177,30 @@ fortinet: []
 
     db_mod.init_db()
 
-    return {
+    isolated = {
         "data": data,
         "reports": reports,
         "config": cfg_path,
         "feeds": feeds_path,
         "cfg": cfg_loaded,
     }
+    try:
+        yield isolated
+    finally:
+        lock_mod.release_run_lock()
+        lock_mod.release_lock()
+        schedule.clear()
 
 
 @pytest.fixture
 def mock_network_ok(monkeypatch):
     import cyberdigest.agent as agent
+    import cyberdigest.cli as cli
     import cyberdigest.network as net
 
     monkeypatch.setattr(net, "check_internet", lambda: True)
     monkeypatch.setattr(agent, "check_internet", lambda: True)
+    monkeypatch.setattr(cli, "check_internet", lambda: True)
     monkeypatch.setattr(net, "is_headless", lambda: True)
     monkeypatch.setattr(agent, "is_headless", lambda: True)
 

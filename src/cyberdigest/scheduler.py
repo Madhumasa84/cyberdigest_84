@@ -3,46 +3,64 @@
 from __future__ import annotations
 
 import platform
+import plistlib
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
-from cyberdigest.config import get_config
 from cyberdigest.logging_setup import log
+from cyberdigest.paths import PROJECT_ROOT, SOURCE_ROOT
+
+TASK_NAME = "CyberDigest"
+LAUNCHD_LABEL = "com.cyberdigest"
+CRON_MARKER = "# cyberdigest-managed"
+_SUBPROCESS_TIMEOUT = 20
 
 
-def _script_path() -> str:
-    # Prefer thin launcher so cron works after package split
-    root = Path(__file__).resolve().parent.parent
-    launcher = root / "news_agent.py"
-    if launcher.exists():
-        return str(launcher)
-    return str(Path(__file__).resolve().parent / "__main__.py")
+def _script_path() -> str | None:
+    """Return the source-checkout launcher, or None for an installed wheel."""
+    if SOURCE_ROOT is None:
+        return None
+    launcher = SOURCE_ROOT / "news_agent.py"
+    return str(launcher) if launcher.is_file() else None
+
+
+def _scheduled_command() -> list[str]:
+    """Build a one-shot command that performs its own configured due check."""
+    script_path = _script_path()
+    target = [script_path] if script_path else ["-m", "cyberdigest"]
+    return [sys.executable, *target, "--once", "--cli-only"]
+
+
+def _legacy_cron_line(line: str) -> bool:
+    lowered = line.lower()
+    return "news_agent.py" in lowered or "-m cyberdigest" in lowered
 
 
 def register_scheduler() -> bool:
     os_name = platform.system()
-    script_path = _script_path()
-    py_exec = sys.executable
-    interval = get_config()["interval_days"]
+    command = _scheduled_command()
     try:
         if os_name == "Windows":
+            task_command = subprocess.list2cmdline(command)
             res = subprocess.run(
                 [
                     "schtasks",
                     "/Create",
                     "/TN",
-                    "CyberDigest",
+                    TASK_NAME,
                     "/TR",
-                    f'"{py_exec}" "{script_path}"',
+                    task_command,
                     "/SC",
                     "DAILY",
                     "/MO",
-                    str(interval),
+                    "1",
                     "/F",
                 ],
                 capture_output=True,
                 text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
             if res.returncode != 0:
                 log.error(
@@ -53,56 +71,54 @@ def register_scheduler() -> bool:
                 )
                 return False
         elif os_name == "Darwin":
-            plist = (
-                '<?xml version="1.0" encoding="UTF-8"?>\n'
-                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
-                ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-                "<plist version=\"1.0\"><dict>\n"
-                "  <key>Label</key><string>com.cyberdigest</string>\n"
-                "  <key>ProgramArguments</key><array>\n"
-                f"    <string>{py_exec}</string>\n"
-                f"    <string>{script_path}</string>\n"
-                "  </array>\n"
-                f"  <key>StartInterval</key><integer>{interval * 86400}</integer>\n"
-                "  <key>RunAtLoad</key><true/>\n"
-                "  <key>WorkingDirectory</key>\n"
-                f"  <string>{Path(script_path).parent}</string>\n"
-                "</dict></plist>\n"
-            )
-            pd = Path.home() / "Library" / "LaunchAgents"
-            pd.mkdir(parents=True, exist_ok=True)
-            pp = pd / "com.cyberdigest.plist"
-            pp.write_text(plist)
-            subprocess.run(["launchctl", "unload", str(pp)], capture_output=True)
+            payload = {
+                "Label": LAUNCHD_LABEL,
+                "ProgramArguments": command,
+                "StartInterval": 86400,
+                "WorkingDirectory": str(PROJECT_ROOT),
+            }
+            launch_agents = Path.home() / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True, exist_ok=True)
+            plist_path = launch_agents / f"{LAUNCHD_LABEL}.plist"
+            plist_path.write_bytes(plistlib.dumps(payload, sort_keys=False))
             subprocess.run(
-                ["launchctl", "load", str(pp)], check=True, capture_output=True
+                ["launchctl", "unload", str(plist_path)],
+                capture_output=True,
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
+            subprocess.run(
+                ["launchctl", "load", str(plist_path)],
+                check=True,
+                capture_output=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
         elif os_name == "Linux":
-            try:
-                cur = subprocess.run(
-                    ["crontab", "-l"], capture_output=True, text=True
-                ).stdout
-            except Exception:
-                cur = ""
+            current = subprocess.run(
+                ["crontab", "-l"],
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
             lines = [
                 line
-                for line in cur.splitlines()
-                if "news_agent.py" not in line and "cyberdigest" not in line.lower()
+                for line in current.stdout.splitlines()
+                if CRON_MARKER not in line and not _legacy_cron_line(line)
             ]
-            workdir = str(Path(script_path).parent)
-            lines.append(
-                f"0 10 */{interval} * * cd {workdir} && {py_exec} {script_path} --cli-only"
-            )
+            command_text = " ".join(shlex.quote(part) for part in command)
+            # Run a cheap due check every day. ``*/N`` in cron's day-of-month
+            # field resets each month and is not a true N-day interval.
+            lines.append(f"0 10 * * * {command_text} {CRON_MARKER}")
             subprocess.run(
                 ["crontab", "-"],
                 input="\n".join(lines) + "\n",
                 text=True,
                 check=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
         else:
             return False
         return verify_scheduler()
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         log.error("Scheduler registration failed: %s", exc)
         return False
 
@@ -112,52 +128,79 @@ def verify_scheduler() -> bool:
     try:
         if os_name == "Windows":
             res = subprocess.run(
-                ["schtasks", "/query", "/TN", "CyberDigest"],
+                ["schtasks", "/query", "/TN", TASK_NAME],
                 capture_output=True,
                 text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
-            return "CyberDigest" in res.stdout
+            return res.returncode == 0 and TASK_NAME in res.stdout
         if os_name == "Darwin":
             res = subprocess.run(
-                ["launchctl", "list"], capture_output=True, text=True
+                ["launchctl", "list"],
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
-            return "com.cyberdigest" in res.stdout
+            return res.returncode == 0 and LAUNCHD_LABEL in res.stdout
         if os_name == "Linux":
-            res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-            return "news_agent.py" in res.stdout or "cyberdigest" in res.stdout.lower()
-    except Exception as exc:
+            res = subprocess.run(
+                ["crontab", "-l"],
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
+            return res.returncode == 0 and (
+                CRON_MARKER in res.stdout or _legacy_cron_line(res.stdout)
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
         log.warning("Scheduler verify failed: %s", exc)
     return False
 
 
-def uninstall_scheduler() -> None:
+def uninstall_scheduler() -> bool:
     os_name = platform.system()
     try:
         if os_name == "Windows":
-            subprocess.run(
-                ["schtasks", "/Delete", "/TN", "CyberDigest", "/F"],
-                check=True,
+            res = subprocess.run(
+                ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
                 capture_output=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
+            if res.returncode != 0:
+                return False
         elif os_name == "Darwin":
-            pp = Path.home() / "Library" / "LaunchAgents" / "com.cyberdigest.plist"
-            if pp.exists():
-                subprocess.run(["launchctl", "unload", str(pp)], capture_output=True)
-                pp.unlink()
+            plist_path = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+            if plist_path.exists():
+                subprocess.run(
+                    ["launchctl", "unload", str(plist_path)],
+                    capture_output=True,
+                    timeout=_SUBPROCESS_TIMEOUT,
+                )
+                plist_path.unlink()
         elif os_name == "Linux":
-            res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+            res = subprocess.run(
+                ["crontab", "-l"],
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
             if res.returncode == 0:
                 lines = [
                     line
                     for line in res.stdout.splitlines()
-                    if "news_agent.py" not in line and "cyberdigest" not in line.lower()
+                    if CRON_MARKER not in line and not _legacy_cron_line(line)
                 ]
                 subprocess.run(
                     ["crontab", "-"],
                     input="\n".join(lines) + "\n",
                     text=True,
                     check=True,
+                    timeout=_SUBPROCESS_TIMEOUT,
                 )
+        else:
+            return False
         print("✔  OS scheduler removed.")
-    except Exception as exc:
+        return True
+    except (OSError, subprocess.SubprocessError) as exc:
         print(f"Uninstall error: {exc}")
+        return False

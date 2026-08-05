@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -30,11 +31,7 @@ def _card(art: dict) -> str:
     rt = reading_time(art["summary"])
     also = ""
     if art.get("other_sources"):
-        also = (
-            '<span class="also">Also: '
-            + h(", ".join(sorted(art["other_sources"])))
-            + "</span>"
-        )
+        also = '<span class="also">Also: ' + h(", ".join(sorted(art["other_sources"]))) + "</span>"
     link = safe_http_url(art.get("link"))
     cve_scores = art.get("cve_scores") or {}
     return (
@@ -62,8 +59,10 @@ def _card(art: dict) -> str:
 def re_safe_color(color: str) -> str:
     """Allow only simple CSS hex colors from feed config."""
     c = (color or "").strip()
-    if len(c) in (4, 7) and c.startswith("#") and all(
-        ch in "0123456789abcdefABCDEF" for ch in c[1:]
+    if (
+        len(c) in (4, 7)
+        and c.startswith("#")
+        and all(ch in "0123456789abcdefABCDEF" for ch in c[1:])
     ):
         return c
     return "#3b82f6"
@@ -89,23 +88,36 @@ def latest_report_name(prefix: str) -> str | None:
 _latest_report_name = latest_report_name
 
 
-def first_available_report(report_paths: list[Path]) -> Path | None:
+def first_available_report(report_paths: list[Path | None]) -> Path | None:
     for rpt in report_paths:
         if rpt and rpt.exists():
             return rpt
     return None
 
 
+def _report_sort_key(path: Path) -> tuple[float, str]:
+    match = re.search(r"(\d{8}_\d{4})$", path.stem)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d_%H%M").timestamp(), path.name
+        except ValueError:
+            pass
+    try:
+        return path.stat().st_mtime, path.name
+    except OSError:
+        return 0.0, path.name
+
+
 def latest_report_path() -> Path | None:
-    names = [
-        _latest_report_name("cybersec_report_"),
-        _latest_report_name("network_report_"),
-        _latest_report_name("cisco_report_"),
-        _latest_report_name("fortinet_report_"),
-    ]
-    return first_available_report(
-        [REPORTS_DIR / name for name in names if name]
-    )
+    reports: list[Path] = []
+    for prefix in (
+        "cybersec_report_",
+        "network_report_",
+        "cisco_report_",
+        "fortinet_report_",
+    ):
+        reports.extend(REPORTS_DIR.glob(f"{prefix}*.html"))
+    return max(reports, key=_report_sort_key, default=None)
 
 
 def _open_windows(path_str: str) -> None:
@@ -141,28 +153,13 @@ def _open_windows(path_str: str) -> None:
     except Exception as exc:
         errors.append(exc)
 
-    # 3) PowerShell Start-Process
-    try:
-        subprocess.Popen(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                f'Start-Process -FilePath "{path_str}"',
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return
-    except Exception as exc:
-        errors.append(exc)
-
-    # 4) webbrowser last resort
+    # 3) webbrowser last resort
     import webbrowser
 
     try:
-        webbrowser.open(Path(path_str).resolve().as_uri(), new=2)
-        return
+        if webbrowser.open(Path(path_str).resolve().as_uri(), new=2):
+            return
+        raise RuntimeError("webbrowser did not accept the URL")
     except Exception as exc:
         errors.append(exc)
 
@@ -226,9 +223,14 @@ def open_local_html(p: Path) -> bool:
             opened = _try(cmd[0], _xdg)
 
     if not opened:
+
+        def _open_webbrowser() -> None:
+            if not webbrowser.open(uri, new=2):
+                raise RuntimeError("webbrowser did not accept the URL")
+
         opened = _try(
             "webbrowser",
-            lambda: webbrowser.open(uri, new=2) or True,
+            _open_webbrowser,
         )
 
     # ASCII-friendly markers (Windows consoles often mishandle emoji)
@@ -330,16 +332,48 @@ def generate_html(
     )
 
     nav_links = (
-        ("" if page_type == "cyber" else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if page_type == "cyber"
+            else f'<a class="arch-btn" href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if page_type == "network"
+            else f'<a class="arch-btn" href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if page_type == "cisco"
+            else f'<a class="arch-btn" href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if page_type == "fortinet"
+            else f'<a class="arch-btn" href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
     footer_links = (
-        ("" if page_type == "cyber" else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>')
-        + ("" if page_type == "network" else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>')
-        + ("" if page_type == "cisco" else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>')
-        + ("" if page_type == "fortinet" else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>')
+        (
+            ""
+            if page_type == "cyber"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cyber}">&#x1F6E1; Cyber</a>'
+        )
+        + (
+            ""
+            if page_type == "network"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_network}">&#x1F310; Network</a>'
+        )
+        + (
+            ""
+            if page_type == "cisco"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_cisco}">&#x1F4CB; Cisco PSIRT</a>'
+        )
+        + (
+            ""
+            if page_type == "fortinet"
+            else f' &nbsp;&middot;&nbsp; <a href="{nav_fortinet}">&#x1F6E1; Fortinet PSIRT</a>'
+        )
     )
 
     hdr_right = (
@@ -395,7 +429,7 @@ def generate_html(
         + str(n_norm)
         + ")</button>"
         + "</div>"
-        + "<select class=\"sort\" id=\"ss\">"
+        + '<select class="sort" id="ss">'
         + "<option value='newest' selected>Sort: Newest</option>"
         + "<option value='severity'>Sort: Severity</option>"
         + "<option value='oldest'>Sort: Oldest</option>"
@@ -419,18 +453,16 @@ def generate_html(
     return _page(page_title + " \u2014 " + report_date, _CSS, body)
 
 
-def _prune_reports(
-    groups: list[list[Path]], max_arch: int, archive_global: bool
-) -> None:
+def _prune_reports(groups: list[list[Path]], max_arch: int, archive_global: bool) -> None:
     if archive_global:
         all_reports: list[Path] = []
         for g in groups:
             all_reports.extend(g)
-        all_reports.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+        all_reports.sort(key=_report_sort_key, reverse=True)
         for old in all_reports[max_arch:]:
             try:
                 old.unlink()
-            except Exception:
+            except OSError:
                 pass
     else:
         for rpts in groups:
@@ -438,7 +470,7 @@ def _prune_reports(
             for old in ordered[max_arch:]:
                 try:
                     old.unlink()
-                except Exception:
+                except OSError:
                     pass
 
 
@@ -498,14 +530,9 @@ def generate_index_html() -> None:
     for reports in (cyber_reports, network_reports, cisco_reports, fortinet_reports):
         if reports:
             latest_candidates.append(reports[0])
-    latest_report = first_available_report(latest_candidates)
+    latest_report = max(latest_candidates, key=_report_sort_key, default=None)
     latest_href = h(latest_report.name if latest_report else "index.html")
-    total = (
-        len(cyber_reports)
-        + len(network_reports)
-        + len(cisco_reports)
-        + len(fortinet_reports)
-    )
+    total = len(cyber_reports) + len(network_reports) + len(cisco_reports) + len(fortinet_reports)
 
     body = (
         '<div class="wrap">'

@@ -32,12 +32,17 @@ def test_is_headless_env(monkeypatch):
 
 
 def test_check_internet_mocked(monkeypatch):
-    monkeypatch.setattr(net.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        net.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError())
+    )
     assert net.check_internet() is False
 
     class Conn:
-        def close(self):
-            pass
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
 
     monkeypatch.setattr(net.socket, "create_connection", lambda *a, **k: Conn())
     assert net.check_internet() is True

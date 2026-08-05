@@ -5,10 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=%i
+DynamicUser=yes
+StateDirectory=cyberdigest
+StateDirectoryMode=0750
 WorkingDirectory=/opt/cyberdigest
 Environment=CYBERDIGEST_HEADLESS=1
 Environment=CYBERDIGEST_DATA_DIR=/var/lib/cyberdigest
+Environment=PYTHONDONTWRITEBYTECODE=1
 # Environment=NVD_API_KEY=
 # Environment=CYBERDIGEST_SMTP_PASSWORD=
 ExecStart=/opt/cyberdigest/venv/bin/python /opt/cyberdigest/news_agent.py --cli-only
@@ -19,7 +22,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/cyberdigest /opt/cyberdigest
+ReadWritePaths=/var/lib/cyberdigest
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

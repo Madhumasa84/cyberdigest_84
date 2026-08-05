@@ -14,6 +14,7 @@ def test_latest_report_path(isolated_app):
     p = reports.latest_report_path()
     assert p is not None
     assert p.exists()
+    assert p.name == "network_report_20240102_1200.html"
 
 
 def test_open_latest_missing(isolated_app, monkeypatch):
@@ -75,3 +76,23 @@ def test_open_windows_uses_cmd_start(isolated_app, monkeypatch, tmp_path):
     assert ok is True
     assert seen["cmd"][0] == "cmd"
     assert "start" in seen["cmd"]
+
+
+def test_open_local_html_reports_all_openers_failed(isolated_app, monkeypatch, tmp_path):
+    import platform
+    import subprocess
+    import webbrowser
+
+    import cyberdigest.reports as reports
+
+    report = tmp_path / "report.html"
+    report.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("no opener")),
+    )
+    monkeypatch.setattr(webbrowser, "open", lambda *_args, **_kwargs: False)
+
+    assert reports.open_local_html(report) is False

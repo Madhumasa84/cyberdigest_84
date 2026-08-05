@@ -46,7 +46,71 @@ def test_second_run_dedupes(isolated_app, mock_network_ok, mock_feeds_http, monk
 
     assert agent.run_agent(is_fallback=False) is True
     # Second run: same feed items already in seen DB → no new articles
-    assert agent.run_agent(is_fallback=False) is False
+    assert agent.run_agent(is_fallback=False) is True
+
+
+def test_report_failure_does_not_commit_seen_state(
+    isolated_app, mock_network_ok, mock_feeds_http, monkeypatch
+):
+    import cyberdigest.agent as agent
+    from cyberdigest.db import get_last_run, load_seen
+
+    def fail_reports(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(agent, "_write_reports", fail_reports)
+
+    assert agent.run_agent() is False
+    assert get_last_run() is None
+    assert load_seen() == set()
+
+
+def test_all_feeds_failed_does_not_advance_last_run(isolated_app, mock_network_ok, monkeypatch):
+    import cyberdigest.agent as agent
+    from cyberdigest.db import get_last_run
+
+    monkeypatch.setattr(agent, "_fetch_articles", lambda *_args: ([], {}, 0, 2))
+
+    assert agent.run_agent() is False
+    assert get_last_run() is None
+
+
+def test_no_configured_feeds_does_not_advance_last_run(isolated_app, mock_network_ok, monkeypatch):
+    import cyberdigest.agent as agent
+    from cyberdigest.db import get_last_run
+
+    monkeypatch.setattr(agent, "_fetch_articles", lambda *_args: ([], {}, 0, 0))
+
+    assert agent.run_agent() is False
+    assert get_last_run() is None
+
+
+def test_unexpected_feed_worker_failure_is_counted(isolated_app, monkeypatch):
+    import cyberdigest.agent as agent
+
+    feeds = {
+        "cyber": [("Broken", "https://example.test/feed", "#fff")],
+        "network": [],
+        "cisco": [],
+        "fortinet": [],
+    }
+    failures = []
+    monkeypatch.setattr(
+        agent,
+        "fetch_feed",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("worker crash")),
+    )
+    monkeypatch.setattr(agent, "update_health", lambda source, ok: failures.append((source, ok)))
+    monkeypatch.setattr(agent, "get_health", lambda: {"Broken": 1})
+
+    articles, health, ok_count, fail_count = agent._fetch_articles(
+        feeds, set(), isolated_app["cfg"]
+    )
+
+    assert articles == []
+    assert health == {"Broken": 1}
+    assert (ok_count, fail_count) == (0, 1)
+    assert failures == [("Broken", False)]
 
 
 def test_offline_skips_run(isolated_app, monkeypatch):

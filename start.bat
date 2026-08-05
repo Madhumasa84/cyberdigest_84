@@ -12,39 +12,45 @@ echo   ^|   One-click threat intelligence          ^|
 echo   +==========================================+
 echo.
 
-:: ── 1. Find Python ──────────────────────────────────────
+:: ── 1. Find Python 3.10+ ────────────────────────────────
 set PYTHON=
-for %%P in (python3 python) do (
+for %%P in (python python3) do (
     if "!PYTHON!"=="" (
         where %%P >nul 2>&1
         if !errorlevel! == 0 (
-            for /f "tokens=*" %%V in ('%%P --version 2^>^&1') do (
-                echo %%V | findstr /C:"Python 3" >nul
-                if !errorlevel! == 0 (
-                    set PYTHON=%%P
-                )
-            )
+            %%P -c "import sys; sys.exit(0 if sys.version_info ^>= (3, 10) else 1)" >nul 2>&1
+            if !errorlevel! == 0 set PYTHON=%%P
         )
     )
 )
 
 if "!PYTHON!"=="" (
-    echo   [INFO] Python 3 not found. Downloading installer...
-    curl -L -o python_installer.exe "https://www.python.org/ftp/python/3.11.8/python-3.11.8-amd64.exe"
+    where py >nul 2>&1
+    if !errorlevel! == 0 (
+        py -3 -c "import sys; sys.exit(0 if sys.version_info ^>= (3, 10) else 1)" >nul 2>&1
+        if !errorlevel! == 0 set PYTHON=py -3
+    )
+)
+
+if "!PYTHON!"=="" (
+    echo   [INFO] Python 3.10+ not found. Installing Python 3.12 with winget...
+    where winget >nul 2>&1
     if !errorlevel! neq 0 (
-        echo   [ERROR] Download failed. Install Python from https://www.python.org/downloads/
-        echo   Check "Add python.exe to PATH" during install, then re-run start.bat
+        echo   [ERROR] winget is unavailable. Install Python 3.10+ from:
+        echo           https://www.python.org/downloads/windows/
         pause
         exit /b 1
     )
-    echo   ...  Installing Python silently...
-    start /wait python_installer.exe /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
-    del python_installer.exe
-    set "NEW_PY_PATH=!LocalAppData!\Programs\Python\Python311\python.exe"
-    if exist "!NEW_PY_PATH!" (
-        set PYTHON="!NEW_PY_PATH!"
-    ) else (
-        echo   [WARNING] Restart this window and double-click start.bat again.
+    winget install --exact --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements
+    if !errorlevel! neq 0 (
+        echo   [ERROR] Python installation failed. Install Python 3.10+ manually.
+        pause
+        exit /b 1
+    )
+    set PYTHON=py -3.12
+    !PYTHON! -c "import sys; sys.exit(0 if sys.version_info ^>= (3, 10) else 1)" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo   [INFO] Restart this window, then double-click start.bat again.
         pause
         exit /b 0
     )
@@ -53,6 +59,18 @@ if "!PYTHON!"=="" (
 for /f "tokens=*" %%V in ('!PYTHON! --version 2^>^&1') do echo   OK  %%V
 
 :: ── 2. Virtual environment ──────────────────────────────
+if exist "venv\Scripts\python.exe" (
+    "venv\Scripts\python.exe" -c "import sys; sys.exit(0 if sys.version_info ^>= (3, 10) else 1)" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo   ...  Rebuilding an incompatible virtual environment...
+        !PYTHON! -m venv --clear venv
+        if !errorlevel! neq 0 (
+            echo   [ERROR] Failed to rebuild the virtual environment.
+            pause
+            exit /b 1
+        )
+    )
+)
 if not exist "venv\Scripts\python.exe" (
     echo   ...  Creating virtual environment...
     !PYTHON! -m venv venv
@@ -65,25 +83,24 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 set VENV_PYTHON=venv\Scripts\python.exe
-set VENV_PIP=venv\Scripts\pip.exe
 
 %VENV_PYTHON% -m pip install --quiet --upgrade pip >nul 2>&1
 
 :: ── 3. Dependencies ─────────────────────────────────────
-echo   ...  Checking packages...
-%VENV_PYTHON% -c "import feedparser, schedule, plyer, pystray; from PIL import Image" >nul 2>&1
+echo   ...  Verifying pinned packages...
+%VENV_PYTHON% -m pip install --quiet --editable .
 if !errorlevel! neq 0 (
-    echo   ...  Installing packages (first run ~30s)...
-    %VENV_PIP% install --quiet -r requirements.txt
-    if !errorlevel! neq 0 (
-        echo   [ERROR] Package install failed. Check internet and retry.
-        pause
-        exit /b 1
-    )
-    echo   OK   Packages installed
-) else (
-    echo   OK   Packages ready
+    echo   [ERROR] Package install failed. Check internet and retry.
+    pause
+    exit /b 1
 )
+%VENV_PYTHON% -m pip check
+if !errorlevel! neq 0 (
+    echo   [ERROR] Installed packages have dependency conflicts.
+    pause
+    exit /b 1
+)
+echo   OK   Packages ready
 
 :: ── 4. Launch ───────────────────────────────────────────
 echo.

@@ -22,12 +22,16 @@ echo -e "${CYAN}  ║   One-click threat intelligence      ║${NC}"
 echo -e "${CYAN}  ╚══════════════════════════════════════╝${NC}"
 echo ""
 
-# ── 1. Find Python 3 ──────────────────────────────────────
+# ── 1. Find Python 3.10+ ──────────────────────────────────
 PYTHON=""
-for cmd in python3 python3.12 python3.11 python3.10 python3.9 python3.8 python; do
+python_supported() {
+    "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+        &>/dev/null
+}
+
+for cmd in python3 python3.14 python3.13 python3.12 python3.11 python3.10 python; do
     if command -v "$cmd" &>/dev/null; then
-        VER=$("$cmd" -c 'import sys; print(sys.version_info.major)' 2>/dev/null || true)
-        if [ "$VER" = "3" ]; then
+        if python_supported "$cmd"; then
             PYTHON="$cmd"
             break
         fi
@@ -35,7 +39,7 @@ for cmd in python3 python3.12 python3.11 python3.10 python3.9 python3.8 python; 
 done
 
 if [ -z "$PYTHON" ]; then
-    echo -e "${YELLOW}→${NC}  Python 3 not found. Attempting automatic installation..."
+    echo -e "${YELLOW}→${NC}  Python 3.10+ not found. Attempting automatic installation..."
 
     if [ "$(uname)" = "Darwin" ]; then
         if command -v brew &>/dev/null; then
@@ -61,10 +65,9 @@ if [ -z "$PYTHON" ]; then
         exit 1
     fi
 
-    for cmd in python3 python; do
+    for cmd in python3 python3.14 python3.13 python3.12 python3.11 python3.10 python; do
         if command -v "$cmd" &>/dev/null; then
-            VER=$("$cmd" -c 'import sys; print(sys.version_info.major)' 2>/dev/null || true)
-            if [ "$VER" = "3" ]; then
+            if python_supported "$cmd"; then
                 PYTHON="$cmd"
                 break
             fi
@@ -72,7 +75,7 @@ if [ -z "$PYTHON" ]; then
     done
 
     if [ -z "$PYTHON" ]; then
-        echo -e "${RED}❌  Python still not found. Restart the terminal and try again.${NC}"
+        echo -e "${RED}❌  Python 3.10+ is required. Install it, then try again.${NC}"
         exit 1
     fi
 fi
@@ -80,6 +83,10 @@ fi
 echo -e "  ${GREEN}✔${NC}  Python: $($PYTHON --version 2>&1)"
 
 # ── 2. Virtual environment ────────────────────────────────
+if [ -f "venv/bin/python" ] && ! python_supported "venv/bin/python"; then
+    echo -e "  ${YELLOW}→${NC}  Rebuilding an incompatible virtual environment…"
+    "$PYTHON" -m venv --clear venv
+fi
 if [ ! -f "venv/bin/python" ]; then
     echo -e "  ${YELLOW}→${NC}  Creating virtual environment (first run)…"
     "$PYTHON" -m venv venv
@@ -92,15 +99,13 @@ source venv/bin/activate
 python -m pip install --quiet --upgrade pip 2>/dev/null || true
 
 # ── 3. Dependencies ───────────────────────────────────────
-echo -e "  ${YELLOW}→${NC}  Checking packages…"
-if ! python -c "import feedparser, schedule, plyer" &>/dev/null \
-   || ! python -c "import pystray; from PIL import Image" &>/dev/null; then
-    echo -e "  ${YELLOW}→${NC}  Installing packages (~30s first time)…"
-    pip install --quiet -r requirements.txt
-    echo -e "  ${GREEN}✔${NC}  Packages installed"
-else
-    echo -e "  ${GREEN}✔${NC}  Packages ready"
+echo -e "  ${YELLOW}→${NC}  Verifying pinned packages…"
+if ! python -m pip install --quiet --editable .; then
+    echo -e "  ${RED}❌${NC}  Package install failed. Check the internet connection and retry."
+    exit 1
 fi
+python -m pip check
+echo -e "  ${GREEN}✔${NC}  Packages ready"
 
 # ── 4. Launch ─────────────────────────────────────────────
 echo ""

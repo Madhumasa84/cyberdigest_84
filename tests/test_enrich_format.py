@@ -20,9 +20,7 @@ def test_format_escapes_html():
 def test_collect_and_enrich(isolated_app, monkeypatch):
     import cyberdigest.enrich as enrich
 
-    monkeypatch.setattr(
-        enrich, "fetch_cve_score", lambda c, budget=None: ("5.0", "MEDIUM")
-    )
+    monkeypatch.setattr(enrich, "fetch_cve_score", lambda c, budget=None: ("5.0", "MEDIUM"))
     arts = [
         {"title": "CVE-2020-1111 issue", "summary": "x"},
         {"title": "no cve here", "summary": "y"},

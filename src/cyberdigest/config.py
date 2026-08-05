@@ -21,14 +21,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_articles_per_network_feed": 5,
     "log_level": "INFO",
     "critical_keywords": [
-        "cve-", "zero-day", "0-day", "actively exploited",
-        "rce", "ransomware", "breach", "critical vulnerability",
-        "outage", "bgp hijack", "backbone failure", "ddos",
+        "cve-",
+        "zero-day",
+        "0-day",
+        "actively exploited",
+        "rce",
+        "ransomware",
+        "breach",
+        "critical vulnerability",
+        "outage",
+        "bgp hijack",
+        "backbone failure",
+        "ddos",
     ],
     "high_keywords": [
-        "vulnerability", "flaw", "patch", "exploit", "malware",
-        "deprecat", "end-of-life", "eol", "misconfiguration",
-        "sd-wan", "firmware update", "security advisory",
+        "vulnerability",
+        "flaw",
+        "patch",
+        "exploit",
+        "malware",
+        "deprecat",
+        "end-of-life",
+        "eol",
+        "misconfiguration",
+        "sd-wan",
+        "firmware update",
+        "security advisory",
     ],
     "email": {
         "enabled": False,
@@ -42,20 +60,28 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "nvd_api_key": "",
     # NVD rate-limit budget (keeps digests snappy without an API key)
     "nvd_enabled": True,
-    "nvd_max_lookups": 15,          # live HTTP lookups per run (cache free)
-    "nvd_timeout_seconds": 25,      # wall-clock seconds for all live lookups
-    "nvd_sleep_no_key": 0.6,        # polite delay without API key
-    "nvd_sleep_with_key": 0.2,      # delay with API key
+    "nvd_max_lookups": 15,  # live HTTP lookups per run (cache free)
+    "nvd_timeout_seconds": 25,  # wall-clock seconds for all live lookups
+    "nvd_sleep_no_key": 0.6,  # polite delay without API key
+    "nvd_sleep_with_key": 0.2,  # delay with API key
 }
 
 _CONFIG_REQUIRED_TYPES: dict[str, type] = {
     "interval_days": int,
     "max_archived_reports": int,
+    "archive_global": bool,
     "max_articles_per_feed": int,
     "max_articles_per_network_feed": int,
     "log_level": str,
+    "critical_keywords": list,
+    "high_keywords": list,
+    "nvd_enabled": bool,
     "nvd_max_lookups": int,
+    "nvd_api_key": str,
 }
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -71,6 +97,8 @@ def _deep_merge(base: dict, override: dict) -> dict:
 def _apply_env_secrets(cfg: dict) -> dict:
     """Overlay secrets from environment (never commit these)."""
     email = cfg.setdefault("email", {})
+    if not isinstance(email, dict):
+        email = {}
     if os.environ.get("CYBERDIGEST_SMTP_PASSWORD"):
         email["password"] = os.environ["CYBERDIGEST_SMTP_PASSWORD"]
     if os.environ.get("CYBERDIGEST_SMTP_USERNAME"):
@@ -87,8 +115,9 @@ def _apply_env_secrets(cfg: dict) -> dict:
     if os.environ.get("CYBERDIGEST_EMAIL_TO"):
         raw = os.environ["CYBERDIGEST_EMAIL_TO"]
         email["to_addrs"] = [a.strip() for a in raw.split(",") if a.strip()]
-    if os.environ.get("CYBERDIGEST_EMAIL_ENABLED", "").lower() in ("1", "true", "yes"):
-        email["enabled"] = True
+    email_enabled = os.environ.get("CYBERDIGEST_EMAIL_ENABLED", "").strip().lower()
+    if email_enabled in _TRUE_VALUES | _FALSE_VALUES:
+        email["enabled"] = email_enabled in _TRUE_VALUES
     if os.environ.get("NVD_API_KEY"):
         cfg["nvd_api_key"] = os.environ["NVD_API_KEY"]
     elif os.environ.get("CYBERDIGEST_NVD_API_KEY"):
@@ -101,37 +130,98 @@ def _apply_env_secrets(cfg: dict) -> dict:
     return cfg
 
 
-def validate_config(cfg: dict) -> list[str]:
+def _validate_required_types(cfg: dict) -> list[str]:
     errors: list[str] = []
     for key, expected in _CONFIG_REQUIRED_TYPES.items():
         val = cfg.get(key)
-        if not isinstance(val, expected):
-            errors.append(
-                f"config: '{key}' must be {expected.__name__}, got {type(val).__name__}"
-            )
-    if cfg.get("interval_days", 1) < 1:
-        errors.append("config: 'interval_days' must be >= 1")
-    if cfg.get("max_archived_reports", 1) < 1:
-        errors.append("config: 'max_archived_reports' must be >= 1")
-    if cfg.get("nvd_max_lookups", 0) < 0:
-        errors.append("config: 'nvd_max_lookups' must be >= 0")
-    try:
-        if float(cfg.get("nvd_timeout_seconds", 0)) < 0:
-            errors.append("config: 'nvd_timeout_seconds' must be >= 0")
-    except (TypeError, ValueError):
-        errors.append("config: 'nvd_timeout_seconds' must be a number")
-    em = cfg.get("email", {})
-    if em.get("enabled"):
-        for f in ("smtp_host", "username", "password", "from_addr"):
-            if not em.get(f):
-                errors.append(f"config: email.{f} is required when email.enabled=true")
-        if not em.get("to_addrs"):
-            errors.append("config: email.to_addrs must have at least one address")
+        valid = isinstance(val, expected)
+        if expected is int and isinstance(val, bool):
+            valid = False
+        if not valid:
+            errors.append(f"config: '{key}' must be {expected.__name__}, got {type(val).__name__}")
     return errors
+
+
+def _validate_numeric_ranges(cfg: dict) -> list[str]:
+    errors: list[str] = []
+    for key in (
+        "interval_days",
+        "max_archived_reports",
+        "max_articles_per_feed",
+        "max_articles_per_network_feed",
+    ):
+        value = cfg.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value < 1:
+            errors.append(f"config: '{key}' must be >= 1")
+    nvd_lookups = cfg.get("nvd_max_lookups")
+    if isinstance(nvd_lookups, int) and not isinstance(nvd_lookups, bool) and nvd_lookups < 0:
+        errors.append("config: 'nvd_max_lookups' must be >= 0")
+    for key in ("nvd_timeout_seconds", "nvd_sleep_no_key", "nvd_sleep_with_key"):
+        value = cfg.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            errors.append(f"config: '{key}' must be a number")
+        elif value < 0:
+            errors.append(f"config: '{key}' must be >= 0")
+    return errors
+
+
+def _validate_text_settings(cfg: dict) -> list[str]:
+    errors: list[str] = []
+    if str(cfg.get("log_level", "")).upper() not in {
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    }:
+        errors.append("config: 'log_level' must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
+    for key in ("critical_keywords", "high_keywords"):
+        values = cfg.get(key)
+        if isinstance(values, list) and not all(
+            isinstance(value, str) and value.strip() for value in values
+        ):
+            errors.append(f"config: '{key}' must contain only non-empty strings")
+    return errors
+
+
+def _validate_email(email: Any) -> list[str]:
+    if not isinstance(email, dict):
+        return ["config: 'email' must be an object"]
+    if not isinstance(email.get("enabled"), bool):
+        return ["config: email.enabled must be a boolean"]
+    if not email["enabled"]:
+        return []
+
+    errors = [
+        f"config: email.{field} is required when email.enabled=true"
+        for field in ("smtp_host", "username", "password", "from_addr")
+        if not email.get(field)
+    ]
+    recipients = email.get("to_addrs")
+    if not recipients:
+        errors.append("config: email.to_addrs must have at least one address")
+    elif not isinstance(recipients, list) or not all(
+        isinstance(address, str) and address.strip() for address in recipients
+    ):
+        errors.append("config: email.to_addrs must be a list of non-empty strings")
+    port = email.get("smtp_port")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        errors.append("config: email.smtp_port must be an integer from 1 to 65535")
+    return errors
+
+
+def validate_config(cfg: dict) -> list[str]:
+    return (
+        _validate_required_types(cfg)
+        + _validate_numeric_ranges(cfg)
+        + _validate_text_settings(cfg)
+        + _validate_email(cfg.get("email", {}))
+    )
 
 
 def _write_default_config() -> None:
     try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = deepcopy(DEFAULT_CONFIG)
         CONFIG_FILE.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
         log.info("Created default config.json")
@@ -146,9 +236,7 @@ def _write_default_config() -> None:
                 "Copy to config.local.json for secrets, or set env vars: "
                 "CYBERDIGEST_SMTP_PASSWORD, NVD_API_KEY"
             )
-            CONFIG_EXAMPLE_FILE.write_text(
-                json.dumps(example, indent=4) + "\n", encoding="utf-8"
-            )
+            CONFIG_EXAMPLE_FILE.write_text(json.dumps(example, indent=4) + "\n", encoding="utf-8")
         except Exception as exc:
             log.debug("Could not write config.example.json: %s", exc)
 
@@ -174,13 +262,14 @@ def load_config(*, exit_on_error: bool = True) -> dict:
     if CONFIG_LOCAL_FILE.exists():
         try:
             local = json.loads(CONFIG_LOCAL_FILE.read_text(encoding="utf-8"))
-            if isinstance(local, dict):
-                cfg = _deep_merge(cfg, local)
-                log.info("Loaded config.local.json overrides")
-        except json.JSONDecodeError as exc:
-            log.error("config.local.json is not valid JSON: %s", exc)
+            if not isinstance(local, dict):
+                raise ValueError("config.local.json root must be an object")
+            cfg = _deep_merge(cfg, local)
+            log.info("Loaded config.local.json overrides")
+        except (json.JSONDecodeError, ValueError) as exc:
+            log.error("config.local.json is invalid: %s", exc)
             if exit_on_error:
-                print(f"[CONFIG ERROR] config.local.json is not valid JSON: {exc}")
+                print(f"[CONFIG ERROR] config.local.json is invalid: {exc}")
                 sys.exit(1)
             raise
 

@@ -54,6 +54,7 @@ def test_extract_cve_ids():
 )
 def test_reading_time(word_count, expected):
     from cyberdigest.textutil import reading_time
+
     text = "word " * word_count
     assert reading_time(text) == expected
 

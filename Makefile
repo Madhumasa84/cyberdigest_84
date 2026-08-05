@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-cov lint format verify smoke run force health clean
+.PHONY: help install install-dev test test-cov lint format format-check security verify smoke force health clean
 
 PYTHON ?= python3
 VENV   ?= venv
@@ -11,9 +11,11 @@ help:
 	@echo "CyberDigest developer targets"
 	@echo "  make install-dev  Create venv + install runtime & dev deps"
 	@echo "  make test         Run unit/integration tests"
-	@echo "  make test-cov     Tests + coverage gate (70%)"
+	@echo "  make test-cov     Tests + coverage gate (80%)"
 	@echo "  make lint         Ruff lint"
-	@echo "  make verify       Full local verification (lint + cov + smoke)"
+	@echo "  make format-check Verify Ruff formatting"
+	@echo "  make security     Audit pinned runtime dependencies"
+	@echo "  make verify       Full local release gate"
 	@echo "  make smoke        CLI smoke (--version/--help/--healthcheck)"
 	@echo "  make force        Force one digest run"
 	@echo "  make health       Run healthcheck"
@@ -24,7 +26,7 @@ $(VENV)/bin/python:
 	$(PIP) install --upgrade pip
 
 install: $(VENV)/bin/python
-	$(PIP) install -r requirements.txt
+	$(PIP) install .
 
 install-dev: $(VENV)/bin/python
 	$(PIP) install -e .[dev]
@@ -36,15 +38,18 @@ test-cov: $(VENV)/bin/python
 	$(PYTEST) -q --cov=cyberdigest --cov-report=term-missing --cov-fail-under=80
 
 lint: $(VENV)/bin/python
-	$(RUFF) check src/cyberdigest tests news_agent.py
+	$(RUFF) check .
+
+format-check: $(VENV)/bin/python
+	$(RUFF) format --check .
 
 security: $(VENV)/bin/python
 	$(PIP) install -q pip-audit
 	$(VENV)/bin/pip-audit -r requirements.txt
 
 format: $(VENV)/bin/python
-	$(RUFF) check --fix src/cyberdigest tests news_agent.py || true
-	$(RUFF) format src/cyberdigest tests news_agent.py || true
+	$(RUFF) check --fix .
+	$(RUFF) format .
 
 smoke: $(VENV)/bin/python
 	$(PY) news_agent.py --version
@@ -58,9 +63,9 @@ health: $(VENV)/bin/python
 force: $(VENV)/bin/python
 	$(PY) news_agent.py --force --cli-only
 
-verify: install-dev lint test-cov smoke
+verify: install-dev lint format-check test-cov smoke security
 	@echo ""
-	@echo "✔  verify passed — lint, coverage≥70%, CLI smoke OK"
+	@echo "✔  verify passed — lint, format, coverage≥80%, smoke, and audit OK"
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .coverage htmlcov dist build *.egg-info

@@ -57,9 +57,7 @@ def init_db() -> None:
 
 def get_last_run() -> datetime | None:
     with get_db() as c:
-        row = c.execute(
-            "SELECT value FROM agent_state WHERE key='last_run'"
-        ).fetchone()
+        row = c.execute("SELECT value FROM agent_state WHERE key='last_run'").fetchone()
         if row:
             try:
                 return datetime.fromisoformat(row["value"])
@@ -95,6 +93,21 @@ def save_articles(arts: list[dict]) -> None:
         )
 
 
+def record_success(arts: list[dict], dt: datetime) -> None:
+    """Atomically persist delivered articles and the successful run timestamp."""
+    first_seen = dt.isoformat()
+    with get_db() as c:
+        if arts:
+            c.executemany(
+                "INSERT OR IGNORE INTO articles(url,title,source,first_seen) VALUES(?,?,?,?)",
+                [(a["link"], a["title"], a["source"], first_seen) for a in arts],
+            )
+        c.execute(
+            "INSERT OR REPLACE INTO agent_state(key,value) VALUES('last_run',?)",
+            (dt.isoformat(),),
+        )
+
+
 def update_health(source: str, ok: bool) -> None:
     now = datetime.now().isoformat()
     with get_db() as c:
@@ -119,17 +132,13 @@ def get_health() -> dict[str, int]:
     with get_db() as c:
         return {
             r["source"]: r["consecutive_failures"]
-            for r in c.execute(
-                "SELECT source,consecutive_failures FROM feed_health"
-            ).fetchall()
+            for r in c.execute("SELECT source,consecutive_failures FROM feed_health").fetchall()
         }
 
 
 def get_cve_cached(cve_id: str) -> tuple[str, str] | None:
     with get_db() as c:
-        row = c.execute(
-            "SELECT score,severity FROM cve_cache WHERE cve_id=?", (cve_id,)
-        ).fetchone()
+        row = c.execute("SELECT score,severity FROM cve_cache WHERE cve_id=?", (cve_id,)).fetchone()
         if row:
             return row["score"], row["severity"]
     return None

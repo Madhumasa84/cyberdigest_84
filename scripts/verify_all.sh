@@ -23,37 +23,33 @@ source venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -e .[dev]
 
-info "1/6 Compile"
+info "1/7 Compile"
 python -m compileall -q src/cyberdigest news_agent.py
 pass "compileall"
 
-info "2/6 Lint (ruff)"
-if ruff check src/cyberdigest tests news_agent.py; then
+info "2/7 Lint (ruff)"
+if ruff check .; then
   pass "ruff"
 else
   fail "ruff found issues"
 fi
 
-info "3/7 Tests + coverage ≥80%"
+info "3/7 Format check (ruff)"
+if ruff format --check .; then
+  pass "ruff format"
+else
+  fail "ruff formatting differs"
+fi
+
+info "4/7 Tests + coverage ≥80%"
 pytest -q --cov=cyberdigest --cov-report=term-missing --cov-fail-under=80
 pass "pytest + coverage"
 
-info "4/6 CLI smoke"
+info "5/7 CLI smoke"
 python news_agent.py --version
 python -m cyberdigest --version
 python news_agent.py --help >/dev/null
 pass "CLI --version / --help"
-
-info "5/6 Healthcheck (live network — non-fatal feed failures)"
-set +e
-python news_agent.py --healthcheck
-hc=$?
-set -e
-if [[ $hc -eq 0 ]]; then
-  pass "healthcheck HEALTHY"
-else
-  echo -e "${YELLOW}⚠${NC}  healthcheck reported issues (exit $hc) — often feed/network flakiness"
-fi
 
 info "6/7 Package import surface"
 python - <<'PY'
@@ -71,7 +67,7 @@ pip install -q pip-audit
 if pip-audit -r requirements.txt; then
   pass "pip-audit clean"
 else
-  echo -e "${YELLOW}⚠${NC}  pip-audit reported findings — review before release"
+  fail "pip-audit reported vulnerable dependencies"
 fi
 
 echo ""
@@ -86,4 +82,6 @@ echo "  Linux:    bash start.sh"
 echo ""
 echo "Optional live digest:"
 echo "  python news_agent.py --force --once --cli-only"
+echo "Optional live health diagnostic:"
+echo "  python news_agent.py --healthcheck"
 echo ""

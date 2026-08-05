@@ -27,20 +27,34 @@ def test_load_default_or_project_feeds():
     assert all(len(t) == 3 for t in feeds["cyber"])
 
 
-def test_load_feeds_read_error(monkeypatch, caplog):
-    import logging
+def test_load_feeds_read_error(monkeypatch):
     from unittest.mock import MagicMock
+
+    import cyberdigest.feeds as feeds_module
 
     mock_file = MagicMock()
     mock_file.exists.return_value = True
     mock_file.read_text.side_effect = PermissionError("Permission denied")
 
     monkeypatch.setattr("cyberdigest.feeds.FEEDS_FILE", mock_file)
+    warning = MagicMock()
+    monkeypatch.setattr(feeds_module.log, "warning", warning)
 
-    with caplog.at_level(logging.WARNING):
-        feeds = load_feeds()
+    feeds = load_feeds()
 
-    assert "Could not load feeds.yaml" in caplog.text
+    warning.assert_called_once()
+    assert "Could not load feeds.yaml" in warning.call_args.args[0]
     assert len(feeds["cyber"]) >= 5
     assert len(feeds["network"]) >= 1
     assert all(len(t) == 3 for t in feeds["cyber"])
+
+
+def test_explicit_empty_categories_stay_empty(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_file = MagicMock()
+    mock_file.exists.return_value = True
+    mock_file.read_text.return_value = "cyber: []\nnetwork: []\ncisco: []\nfortinet: []\n"
+    monkeypatch.setattr("cyberdigest.feeds.FEEDS_FILE", mock_file)
+
+    assert load_feeds() == {"cyber": [], "network": [], "cisco": [], "fortinet": []}

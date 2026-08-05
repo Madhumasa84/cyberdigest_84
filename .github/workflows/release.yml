@@ -25,13 +25,16 @@ jobs:
 
       - name: Verify
         run: |
-          ruff check src/cyberdigest tests news_agent.py
+          ruff check .
+          ruff format --check .
           pytest -q --cov=cyberdigest --cov-fail-under=80
           pip install pip-audit
           pip-audit -r requirements.txt
 
       - name: Build sdist + wheel
-        run: python -m build
+        run: |
+          python -m build
+          twine check dist/*
 
       - name: Create GitHub Release with artifacts
         uses: softprops/action-gh-release@v2

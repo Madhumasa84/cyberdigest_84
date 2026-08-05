@@ -10,17 +10,13 @@ from cyberdigest.config import get_config
 from cyberdigest.logging_setup import log
 
 
-def send_email(
-    html_content: str, report_date: str, n_articles: int, n_crit: int
-) -> None:
+def send_email(html_content: str, report_date: str, n_articles: int, n_crit: int) -> None:
     em = get_config().get("email", {})
     if not em.get("enabled"):
         return
     try:
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = (
-            f"CyberDigest — {report_date} ({n_articles} articles, {n_crit} critical)"
-        )
+        msg["Subject"] = f"CyberDigest — {report_date} ({n_articles} articles, {n_crit} critical)"
         msg["From"] = em["from_addr"]
         msg["To"] = ", ".join(em["to_addrs"])
         msg.attach(MIMEText(html_content, "html", "utf-8"))

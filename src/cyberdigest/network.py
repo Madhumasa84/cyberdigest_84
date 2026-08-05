@@ -8,9 +8,12 @@ import socket
 
 
 def check_internet() -> bool:
-    for host in ("8.8.8.8", "1.1.1.1"):
+    # Try HTTPS first because corporate networks commonly block direct DNS
+    # probes even when normal web access is available.
+    for endpoint in (("1.1.1.1", 443), ("8.8.8.8", 53)):
         try:
-            socket.create_connection((host, 53), timeout=3)
+            with socket.create_connection(endpoint, timeout=3):
+                pass
             return True
         except OSError:
             pass

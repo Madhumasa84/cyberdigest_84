@@ -37,7 +37,12 @@ def test_setup_logging_custom_level(isolated_app):
     log = setup_logging("DEBUG")
     assert log.level == logging.DEBUG
     # stream handler level is always WARNING
-    stream_handler = [h for h in log.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.handlers.RotatingFileHandler)][0]
+    stream_handler = [
+        h
+        for h in log.handlers
+        if isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.handlers.RotatingFileHandler)
+    ][0]
     assert stream_handler.level == logging.WARNING
 
 
@@ -64,6 +69,7 @@ def test_setup_logging_creates_parent_dir(isolated_app, tmp_path, monkeypatch):
     assert not test_log_file.parent.exists()
 
     import cyberdigest.logging_setup as logging_setup
+
     monkeypatch.setattr(logging_setup, "LOG_FILE", test_log_file)
 
     setup_logging()

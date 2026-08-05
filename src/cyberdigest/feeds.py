@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
-import socket
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -23,7 +23,7 @@ from cyberdigest.scoring import score_severity
 from cyberdigest.textutil import safe_http_url, strip_html, truncate
 
 FETCH_TIMEOUT = 15
-socket.setdefaulttimeout(FETCH_TIMEOUT)
+MAX_FEED_BYTES = 10 * 1024 * 1024
 
 FEED_HEADERS = {
     "User-Agent": USER_AGENT,
@@ -40,11 +40,23 @@ DEFAULT_CYBER_FEEDS: list[tuple[str, str, str]] = [
     ("Cisco Talos", "https://blog.talosintelligence.com/rss/", "#049fd4"),
     ("Cisco Security", "https://feedpress.me/ciscosecurity", "#049fd4"),
     ("Palo Alto Unit 42", "https://feeds.feedburner.com/Unit42", "#fa4616"),
-    ("Sophos Threat Research", "https://news.sophos.com/en-us/category/threat-research/feed/", "#9b59b6"),
-    ("CISA Advisories", "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "#27ae60"),
+    (
+        "Sophos Threat Research",
+        "https://news.sophos.com/en-us/category/threat-research/feed/",
+        "#9b59b6",
+    ),
+    (
+        "CISA Advisories",
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "#27ae60",
+    ),
     ("Fortinet Blog", "https://feeds.feedburner.com/fortinetblog", "#ee3124"),
     ("Microsoft Security", "https://www.microsoft.com/security/blog/feed/", "#0078d4"),
-    ("Google Online Security Blog", "https://security.googleblog.com/feeds/posts/default?alt=rss", "#4285f4"),
+    (
+        "Google Online Security Blog",
+        "https://security.googleblog.com/feeds/posts/default?alt=rss",
+        "#4285f4",
+    ),
     ("WeLiveSecurity (ESET)", "https://feeds.feedburner.com/eset/blog", "#16a085"),
     ("Graham Cluley", "https://grahamcluley.com/feed/", "#e67e22"),
     ("Cloudflare Security", "https://blog.cloudflare.com/tag/security/rss", "#f38020"),
@@ -55,12 +67,20 @@ DEFAULT_NETWORK_FEEDS: list[tuple[str, str, str]] = [
     ("Network World", "https://www.networkworld.com/feed/", "#0ea5e9"),
     ("Packet Pushers", "https://feeds.packetpushers.net/packetpushersfullfeed/", "#6366f1"),
     ("Cisco Blogs", "https://blogs.cisco.com/developer/feed", "#049fd4"),
-    ("AWS Networking", "https://aws.amazon.com/blogs/networking-and-content-delivery/feed/", "#ff9900"),
+    (
+        "AWS Networking",
+        "https://aws.amazon.com/blogs/networking-and-content-delivery/feed/",
+        "#ff9900",
+    ),
     ("The New Stack", "https://thenewstack.io/feed/", "#0077c8"),
 ]
 
 DEFAULT_CISCO_PSIRT_FEEDS: list[tuple[str, str, str]] = [
-    ("Cisco PSIRT", "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml", "#049fd4"),
+    (
+        "Cisco PSIRT",
+        "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml",
+        "#049fd4",
+    ),
 ]
 
 DEFAULT_FORTINET_PSIRT_FEEDS: list[tuple[str, str, str]] = [
@@ -109,12 +129,13 @@ def _parse_simple_feeds_yaml(text: str) -> dict[str, Any]:
         line = raw_line.rstrip()
         if not line.strip():
             continue
-        # section header (no leading space, ends with :)
-        if re.match(r"^[A-Za-z_][\w]*:\s*$", line):
+        # Section header; support both ``section:`` and explicit ``section: []``.
+        section_match = re.match(r"^([A-Za-z_][\w]*):\s*(\[\])?\s*$", line)
+        if section_match:
             if current is not None and section:
                 data.setdefault(section, []).append(current)
                 current = None
-            section = line.strip().rstrip(":")
+            section = section_match.group(1)
             data.setdefault(section, [])
             continue
         if section is None:
@@ -133,7 +154,9 @@ def _parse_simple_feeds_yaml(text: str) -> dict[str, Any]:
     return data
 
 
-def _parse_feed_list(raw: list | None, default: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _parse_feed_list(
+    raw: list | None, default: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     # None → defaults; explicit empty list → no feeds for that category
     if raw is None:
         return list(default)
@@ -143,15 +166,23 @@ def _parse_feed_list(raw: list | None, default: list[tuple[str, str, str]]) -> l
         return []
     out: list[tuple[str, str, str]] = []
     for item in raw:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
-            name, url = str(item[0]), str(item[1])
+        if isinstance(item, list | tuple) and len(item) >= 2:
+            name = str(item[0])
+            url = safe_http_url(str(item[1]), fallback="")
+            if not url:
+                log.warning("Ignoring feed with non-HTTP URL: %s", name)
+                continue
             color = str(item[2]) if len(item) > 2 else "#3b82f6"
             out.append((name, url, color))
         elif isinstance(item, dict) and item.get("name") and item.get("url"):
+            url = safe_http_url(str(item["url"]), fallback="")
+            if not url:
+                log.warning("Ignoring feed with non-HTTP URL: %s", item["name"])
+                continue
             out.append(
                 (
                     str(item["name"]),
-                    str(item["url"]),
+                    url,
                     str(item.get("color") or "#3b82f6"),
                 )
             )
@@ -171,10 +202,14 @@ def load_feeds() -> dict[str, list[tuple[str, str, str]]]:
             text = FEEDS_FILE.read_text(encoding="utf-8")
             data = _load_feeds_document(text)
             if isinstance(data, dict):
-                cyber = _parse_feed_list(data.get("cyber") or data.get("cybersecurity"), cyber)
-                network = _parse_feed_list(data.get("network") or data.get("networking"), network)
-                cisco = _parse_feed_list(data.get("cisco") or data.get("cisco_psirt"), cisco)
-                fortinet = _parse_feed_list(data.get("fortinet") or data.get("fortinet_psirt"), fortinet)
+
+                def configured(primary: str, alias: str) -> Any:
+                    return data[primary] if primary in data else data.get(alias)
+
+                cyber = _parse_feed_list(configured("cyber", "cybersecurity"), cyber)
+                network = _parse_feed_list(configured("network", "networking"), network)
+                cisco = _parse_feed_list(configured("cisco", "cisco_psirt"), cisco)
+                fortinet = _parse_feed_list(configured("fortinet", "fortinet_psirt"), fortinet)
                 log.info("Loaded custom feeds from feeds.yaml")
         except Exception as exc:
             log.warning("Could not load feeds.yaml (%s) — using defaults", exc)
@@ -199,9 +234,15 @@ class _ParsedFeed:
 
 
 def _download_feed(url: str) -> bytes:
+    url = safe_http_url(url, fallback="")
+    if not url:
+        raise ValueError("feed URL must use http or https")
     req = urllib.request.Request(url, headers=FEED_HEADERS)
     with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-        return resp.read()
+        payload = resp.read(MAX_FEED_BYTES + 1)
+    if len(payload) > MAX_FEED_BYTES:
+        raise ValueError(f"feed response exceeded {MAX_FEED_BYTES} bytes")
+    return payload
 
 
 def _xml_text(node: ET.Element, tag: str) -> str:
@@ -212,9 +253,7 @@ def _xml_text(node: ET.Element, tag: str) -> str:
 
 
 def _regex_tag_text(block: str, tag: str) -> str:
-    match = re.search(
-        rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, flags=re.IGNORECASE | re.DOTALL
-    )
+    match = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return ""
     text = re.sub(r"^\s*<!\[CDATA\[|\]\]>\s*$", "", match.group(1).strip())
@@ -232,9 +271,7 @@ def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
             summary = _xml_text(item, "description")
             pub = _xml_text(item, "pubDate") or _xml_text(item, "{*}date")
             if title or link:
-                entries.append(
-                    {"title": title, "link": link, "summary": summary, "published": pub}
-                )
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
     except ET.ParseError:
         for block in re.findall(
             r"<item\b[^>]*>(.*?)</item>", text, flags=re.IGNORECASE | re.DOTALL
@@ -244,9 +281,7 @@ def _parse_rss_fallback(raw: bytes) -> _ParsedFeed:
             summary = _regex_tag_text(block, "description")
             pub = _regex_tag_text(block, "pubDate")
             if title or link:
-                entries.append(
-                    {"title": title, "link": link, "summary": summary, "published": pub}
-                )
+                entries.append({"title": title, "link": link, "summary": summary, "published": pub})
     return _ParsedFeed(entries)
 
 
@@ -293,21 +328,13 @@ def _parse_cisa_kev_json(raw: bytes) -> _ParsedFeed:
 
 
 def _fetch_once(name: str, url: str) -> Any:
-    raw: bytes | None = None
-    try:
-        raw = _download_feed(url)
-        is_json_feed = (
-            url.lower().endswith(".json")
-            or "known_exploited_vulnerabilities" in url
-        )
-        if is_json_feed:
-            parsed_json = _parse_cisa_kev_json(raw)
-            if parsed_json.entries:
-                return parsed_json
-        p = feedparser.parse(raw)
-    except Exception as download_exc:
-        log.debug("Direct feed download failed for %s: %s", name, download_exc)
-        p = feedparser.parse(url, agent=USER_AGENT)
+    raw = _download_feed(url)
+    is_json_feed = url.lower().endswith(".json") or "known_exploited_vulnerabilities" in url
+    if is_json_feed:
+        parsed_json = _parse_cisa_kev_json(raw)
+        if parsed_json.entries:
+            return parsed_json
+    p = feedparser.parse(raw)
     if not getattr(p, "entries", None):
         if raw:
             fallback = _parse_rss_fallback(raw)
@@ -368,13 +395,11 @@ def fetch_feed(
             if not link or link in seen:
                 continue
             title = strip_html(entry.get("title") or "Untitled")
-            summary = truncate(
-                strip_html(entry.get("summary") or entry.get("description") or "")
-            )
+            summary = truncate(strip_html(entry.get("summary") or entry.get("description") or ""))
             pub = strip_html(entry.get("published") or entry.get("updated") or "")
             pt = entry.get("published_parsed") or entry.get("updated_parsed")
             try:
-                ts = time.mktime(pt) if pt else time.time()
+                ts = calendar.timegm(pt) if pt else time.time()
             except Exception:
                 ts = time.time()
             arts.append(
@@ -386,9 +411,7 @@ def fetch_feed(
                     "timestamp": ts,
                     "color": color,
                     "source": name,
-                    "severity": score_severity(
-                        title, summary, source=name, category=category
-                    ),
+                    "severity": score_severity(title, summary, source=name, category=category),
                     "category": category,
                     "other_sources": set(),
                 }

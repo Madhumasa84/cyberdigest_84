@@ -20,14 +20,16 @@ This runs:
 
 1. `compileall`
 2. `ruff` lint
-3. `pytest` with coverage ≥ 70%
-4. CLI smoke (`--version`, `--help`)
+3. `ruff format --check`
+4. `pytest` with coverage ≥ 80%
+5. CLI smoke (`--version`, `--help`)
+6. `pip-audit` against pinned runtime dependencies
 
 ## Project layout
 
 | Path | Role |
 |------|------|
-| `cyberdigest/` | Application package |
+| `src/cyberdigest/` | Application package |
 | `news_agent.py` | Stable CLI entry for scripts/cron |
 | `feeds.yaml` | Feed catalog (prefer editing this over Python) |
 | `tests/` | Unit + integration tests (mocked network) |
@@ -52,6 +54,3 @@ This runs:
 - Small, focused diffs
 - `make verify` green
 - Update README when behavior or CLI flags change
-- **DCO:** sign every commit (`git commit -s` / `--signoff`) so the
-  `Signed-off-by: Your Name <email>` trailer is present. The DCO check
-  fails without it.

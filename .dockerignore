@@ -5,9 +5,13 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 *.egg-info/
+dist/
+build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 reports/
 state.db
 *.db
@@ -16,6 +20,7 @@ agent_log.txt.*
 heartbeat.txt
 status.txt
 agent.lock
+run.lock
 config.local.json
 *.tmp
 .DS_Store

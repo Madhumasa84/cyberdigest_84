@@ -23,10 +23,13 @@ _IDXCSS = _load_asset("idxcss.txt")
 _JS = _load_asset("js.txt")
 
 
+_BADGE_CLASSES = {"Critical": "bsc", "High": "bsh", "Normal": "bsn"}
+
+
 def _card(art: dict) -> str:
-    sev = art["severity"]
+    sev = art["severity"] if art.get("severity") in _BADGE_CLASSES else "Normal"
     sc = sev.lower()
-    bc = {"Critical": "bsc", "High": "bsh", "Normal": "bsn"}[sev]
+    bc = _BADGE_CLASSES[sev]
     col = re_safe_color(art.get("color") or "#3b82f6")
     rt = reading_time(art["summary"])
     also = ""
@@ -40,7 +43,7 @@ def _card(art: dict) -> str:
         f'<div class="ctop">'
         f'<div class="bdgs">'
         f'<span class="bdg" style="background:{col}22;border:1px solid {col}55;color:{col}">'
-        f'{h(art["source"])}</span>'
+        f"{h(art['source'])}</span>"
         f'<span class="bdg {bc}">{h(sev)}</span>'
         f"</div>"
         f'<span class="rt">{h(rt)}</span>'
@@ -321,8 +324,7 @@ def generate_html(
         dc = "ok" if fails == 0 else ("fail" if fails >= 3 else "warn")
         tip = "OK" if fails == 0 else f"{fails} failure(s)"
         chips += (
-            f'<span class="chip" title="{h(tip)}">'
-            f'<span class="dot {dc}"></span>{h(name)}</span>'
+            f'<span class="chip" title="{h(tip)}"><span class="dot {dc}"></span>{h(name)}</span>'
         )
 
     cards_html = (

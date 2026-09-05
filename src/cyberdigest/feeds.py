@@ -161,6 +161,7 @@ def _parse_feed_list(
     if raw is None:
         return list(default)
     if not isinstance(raw, list):
+        log.warning("Feed section must be a list, got %s — using defaults", type(raw).__name__)
         return list(default)
     if len(raw) == 0:
         return []
@@ -186,7 +187,9 @@ def _parse_feed_list(
                     str(item.get("color") or "#3b82f6"),
                 )
             )
-    return out if out else list(default)
+    if not out:
+        log.warning("Every configured feed in this section was unusable — skipping the section")
+    return out
 
 
 def load_feeds() -> dict[str, list[tuple[str, str, str]]]:

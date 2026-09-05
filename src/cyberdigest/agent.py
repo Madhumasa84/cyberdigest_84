@@ -111,8 +111,11 @@ def _fetch_articles(feeds: dict, seen: set[str], cfg: dict) -> tuple[list[dict],
                     log.debug("Could not update failed feed health for %s", source, exc_info=True)
 
     health = get_health()
-    ok_count = sum(1 for name, _, _ in all_feeds if health.get(name, 0) == 0)
-    return articles, health, ok_count, len(all_feeds) - ok_count
+    # Health is keyed by feed name, so count each distinct source once even
+    # when the same feed appears in several categories.
+    names = {name for name, _, _ in all_feeds}
+    ok_count = sum(1 for name in names if health.get(name, 0) == 0)
+    return articles, health, ok_count, len(names) - ok_count
 
 
 def _cluster_by_category(articles: list[dict]) -> dict[str, list[dict]]:

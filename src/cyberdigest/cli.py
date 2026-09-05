@@ -17,7 +17,7 @@ from cyberdigest.agent import run_agent
 from cyberdigest.config import get_config, reload_config
 from cyberdigest.db import get_db, get_last_run, init_db
 from cyberdigest.feeds import USER_AGENT, load_feeds
-from cyberdigest.lock import acquire_lock, lock_is_active, release_lock
+from cyberdigest.lock import acquire_lock, lock_is_active, release_lock, release_run_lock
 from cyberdigest.logging_setup import log
 from cyberdigest.network import check_internet, is_headless
 from cyberdigest.paths import LOCK_FILE, RUN_LOCK_FILE
@@ -32,6 +32,7 @@ def _handle_signal(sig, frame):
     global _SHUTDOWN
     _SHUTDOWN = True
     log.info("Shutdown signal received (%s). Finishing gracefully…", sig)
+    release_run_lock()
     release_lock()
     sys.exit(0)
 

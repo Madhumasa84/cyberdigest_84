@@ -99,6 +99,7 @@ def _apply_env_secrets(cfg: dict) -> dict:
     email = cfg.setdefault("email", {})
     if not isinstance(email, dict):
         email = {}
+        cfg["email"] = email
     if os.environ.get("CYBERDIGEST_SMTP_PASSWORD"):
         email["password"] = os.environ["CYBERDIGEST_SMTP_PASSWORD"]
     if os.environ.get("CYBERDIGEST_SMTP_USERNAME"):

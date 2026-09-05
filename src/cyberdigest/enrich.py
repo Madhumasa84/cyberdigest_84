@@ -123,6 +123,7 @@ def fetch_cve_score(
         return None
 
     cfg = get_config()
+    attempted = False
     try:
         headers = {"User-Agent": USER_AGENT}
         api_key = (cfg.get("nvd_api_key") or "").strip()
@@ -133,6 +134,7 @@ def fetch_cve_score(
             headers=headers,
         )
         budget.record_lookup()
+        attempted = True
         with urllib.request.urlopen(req, timeout=8) as r:
             data = json.loads(r.read().decode())
         metrics = data.get("vulnerabilities", [{}])[0].get("cve", {}).get("metrics", {})
@@ -143,7 +145,6 @@ def fetch_cve_score(
                     "baseSeverity", "UNKNOWN"
                 )
                 put_cve_cache(cve_id, score, sev)
-                budget.sleep_politely()
                 return score, sev
         budget.record_failure()
     except (
@@ -160,6 +161,9 @@ def fetch_cve_score(
     except Exception as exc:  # pragma: no cover — unexpected
         budget.record_failure()
         log.debug("CVE lookup failed for %s: %s", cve_id, exc)
+    finally:
+        if attempted:
+            budget.sleep_politely()
     return None
 
 

@@ -8,18 +8,14 @@ from difflib import SequenceMatcher
 from cyberdigest.config import get_config
 from cyberdigest.textutil import extract_cve_ids
 
-# Short tokens matched with word boundaries to reduce false positives
-_SHORT_CRITICAL = re.compile(
+# Escalation cues for articles that already reference a CVE
+_CRITICAL_CVE_CUES = re.compile(
     r"(?<![a-z0-9])(rce|ddos|ransomware|breach)(?![a-z0-9])",
     re.IGNORECASE,
 )
-_SHORT_HIGH = re.compile(
-    r"(?<![a-z0-9])(exploit|malware|patch|vulnerability|flaw)(?![a-z0-9])",
-    re.IGNORECASE,
-)
 
 
-def _keyword_hit(text: str, keywords: list[str], short_re: re.Pattern | None) -> bool:
+def _keyword_hit(text: str, keywords: list[str]) -> bool:
     for kw in keywords:
         kl = kw.lower().strip()
         if not kl:
@@ -29,23 +25,9 @@ def _keyword_hit(text: str, keywords: list[str], short_re: re.Pattern | None) ->
             if kl in text:
                 return True
             continue
-        # Short tokens: require boundary via dedicated regex or explicit check
-        if short_re and kl in {
-            "rce",
-            "ddos",
-            "ransomware",
-            "breach",
-            "exploit",
-            "malware",
-            "patch",
-            "vulnerability",
-            "flaw",
-        }:
-            continue  # handled by short_re
+        # Short tokens need word boundaries to reduce false positives
         if re.search(rf"(?<![a-z0-9]){re.escape(kl)}(?![a-z0-9])", text):
             return True
-    if short_re and short_re.search(text):
-        return True
     return False
 
 
@@ -78,13 +60,13 @@ def score_severity(
                 "remote code",
                 "known exploited",
             )
-        ) or _SHORT_CRITICAL.search(text):
+        ) or _CRITICAL_CVE_CUES.search(text):
             return "Critical"
         return "High"
 
-    if _keyword_hit(text, cfg.get("critical_keywords", []), _SHORT_CRITICAL):
+    if _keyword_hit(text, cfg.get("critical_keywords", [])):
         return "Critical"
-    if _keyword_hit(text, cfg.get("high_keywords", []), _SHORT_HIGH):
+    if _keyword_hit(text, cfg.get("high_keywords", [])):
         return "High"
     return "Normal"
 

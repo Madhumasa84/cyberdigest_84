@@ -26,8 +26,13 @@ _JS = _load_asset("js.txt")
 _BADGE_CLASSES = {"Critical": "bsc", "High": "bsh", "Normal": "bsn"}
 
 
+def normalize_severity(severity: object) -> str:
+    """Map any severity onto one of the three rendered buckets."""
+    return str(severity) if severity in _BADGE_CLASSES else "Normal"
+
+
 def _card(art: dict) -> str:
-    sev = art["severity"] if art.get("severity") in _BADGE_CLASSES else "Normal"
+    sev = normalize_severity(art.get("severity"))
     sc = sev.lower()
     bc = _BADGE_CLASSES[sev]
     col = re_safe_color(art.get("color") or "#3b82f6")
@@ -268,12 +273,13 @@ def generate_html(
 ) -> str:
     cfg = get_config()
     sev_ord = {"Critical": 0, "High": 1, "Normal": 2}
-    arts = sorted(arts, key=lambda x: (-x["timestamp"], sev_ord.get(x["severity"], 3)))
+    arts = sorted(arts, key=lambda x: (-x["timestamp"], sev_ord[normalize_severity(x["severity"])]))
 
     total = len(arts)
-    n_crit = sum(1 for a in arts if a["severity"] == "Critical")
-    n_high = sum(1 for a in arts if a["severity"] == "High")
-    n_norm = sum(1 for a in arts if a["severity"] == "Normal")
+    severities = [normalize_severity(a["severity"]) for a in arts]
+    n_crit = severities.count("Critical")
+    n_high = severities.count("High")
+    n_norm = severities.count("Normal")
     sources = sorted({a["source"] for a in arts})
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 

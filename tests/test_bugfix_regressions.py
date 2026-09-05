@@ -99,6 +99,37 @@ def test_card_tolerates_unknown_severity(severity):
     assert 'data-severity="Normal"' in html
 
 
+def test_normal_counts_include_normalized_severities(isolated_app):
+    from cyberdigest.reports import generate_html
+
+    def art(severity: str, title: str) -> dict:
+        return {
+            "title": title,
+            "summary": "body",
+            "link": "https://example.com/a",
+            "published": "today",
+            "timestamp": 1.0,
+            "color": "#e74c3c",
+            "source": "Src",
+            "severity": severity,
+            "other_sources": set(),
+            "cve_scores": {},
+        }
+
+    html = generate_html(
+        [art("Critical", "c"), art("High", "hi"), art("Normal", "n"), art("Info", "i")],
+        "20260101_1200",
+        {},
+        "",
+        [("Src", "https://example.com", "#e74c3c")],
+        "cyber",
+        {},
+    )
+    assert html.count('data-severity="Normal"') == 2
+    assert 'data-f="Normal">&#x1F535; Normal (2)' in html
+    assert 'data-f="Critical">&#x1F534; Critical (1)' in html
+
+
 def test_env_secrets_replace_invalid_email_block(monkeypatch):
     monkeypatch.setenv("CYBERDIGEST_SMTP_PASSWORD", "s3cret")
     cfg = _apply_env_secrets({"email": "not-an-object"})

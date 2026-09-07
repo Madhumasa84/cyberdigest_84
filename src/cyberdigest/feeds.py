@@ -7,11 +7,11 @@ import json
 import re
 import time
 import urllib.request
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import defusedxml.ElementTree as ET
 import feedparser
 
 from cyberdigest.config import get_config
